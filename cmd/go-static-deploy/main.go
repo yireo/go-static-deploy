@@ -48,8 +48,10 @@ func run() int {
 	flag.BoolVar(&opts.NoJavascript, "no-javascript", false, "Do not deploy JavaScript files (also skips requirejs-config.js and js-translation.json)")
 	flag.BoolVar(&opts.NoCSS, "no-css", false, "Do not deploy CSS files")
 	flag.BoolVar(&opts.NoLess, "no-less", false, "Do not compile LESS files")
-	flag.BoolVar(&opts.NoHTMLMinify, "no-html-minify", false, "Do not minify PHTML templates")
 	flag.BoolVar(&opts.NoJsBundle, "no-js-bundle", false, "Do not create JavaScript bundles")
+	// Accepted for compatibility with bin/magento only: PHTML templates are never minified.
+	flag.Bool("no-html-minify", true, "Ignored: PHTML templates are never minified")
+	_ = flag.CommandLine.MarkHidden("no-html-minify")
 	flag.BoolVar(&opts.NoTranslations, "no-translations", false, "Do not generate js-translation.json")
 	flag.BoolVar(&opts.NoSRI, "no-sri", false, "Do not generate sri-hashes.json")
 	flag.BoolVarP(&opts.Verbose, "verbose", "v", false, "Verbose output")
@@ -182,17 +184,6 @@ func run() int {
 		results = d.Run(goGroups)
 		if printSummary(out, results, time.Since(start), opts.Verbose) {
 			exitCode = 1
-		}
-	}
-
-	if !opts.NoHTMLMinify {
-		templateStart := time.Now()
-		count, err := d.MinifyTemplates()
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error minifying templates: %v\n", err)
-			exitCode = 1
-		} else if opts.Verbose {
-			fmt.Fprintf(out, "Minified %d PHTML templates in %.2fs\n", count, time.Since(templateStart).Seconds())
 		}
 	}
 

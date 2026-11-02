@@ -22,7 +22,6 @@ type Options struct {
 	NoJavascript   bool
 	NoCSS          bool
 	NoLess         bool
-	NoHTMLMinify   bool
 	NoJsBundle     bool
 	NoTranslations bool
 	NoSRI          bool

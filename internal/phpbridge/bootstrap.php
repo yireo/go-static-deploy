@@ -10,7 +10,6 @@
  *  - LESS compilation with wikimedia/less.php (same library and options as Magento)
  *  - CSS url() rewriting using Magento's own CssResolver (PCRE-specific regular expressions)
  *  - JS translation dictionaries (fgetcsv, PHP array semantics, intl MessageFormatter, json_encode)
- *  - phtml template minification using Magento's own HTML minifier
  *  - optional: reading system configuration and translations from the database (PDO only)
  *
  * Usage:
@@ -220,7 +219,6 @@ final class GsdWorker
     private array $phraseCache = [];
     private array $packCache = [];
     private ?object $cssResolver = null;
-    private ?object $htmlMinifier = null;
 
     public function __construct(string $root, bool $withDb)
     {
@@ -263,8 +261,6 @@ final class GsdWorker
                 return ['content' => $this->processCss((string)$request['content'], $request)];
             case 'i18n':
                 return ['content' => $this->buildJsTranslation($request)];
-            case 'minify-templates':
-                return ['count' => $this->minifyTemplates((array)$request['files'])];
             case 'bundle':
                 return ['count' => $this->bundle($request)];
             case 'view-config':
@@ -857,30 +853,6 @@ final class GsdWorker
                 "    ]\n" .
                 "});\n");
             fclose($handle);
-        }
-        return $count;
-    }
-
-    /**
-     * Same as \Magento\Deploy\Service\MinifyTemplates::minifyTemplates()
-     */
-    private function minifyTemplates(array $files): int
-    {
-        if ($this->htmlMinifier === null) {
-            $driverPool = new \Magento\Framework\Filesystem\DriverPool();
-            $directoryList = new \Magento\Framework\App\Filesystem\DirectoryList($this->root);
-            $readFactory = new \Magento\Framework\Filesystem\Directory\ReadFactory($driverPool);
-            $filesystem = new \Magento\Framework\Filesystem(
-                $directoryList,
-                $readFactory,
-                new \Magento\Framework\Filesystem\Directory\WriteFactory($driverPool)
-            );
-            $this->htmlMinifier = new \Magento\Framework\View\Template\Html\Minifier($filesystem, $readFactory);
-        }
-        $count = 0;
-        foreach ($files as $file) {
-            $this->htmlMinifier->minify((string)$file);
-            $count++;
         }
         return $count;
     }

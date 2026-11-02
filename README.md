@@ -32,7 +32,7 @@ production mode, and production mode with minification:
 - The JavaScript bundles contain the same files. They are not byte-identical because Magento fills them in unsorted
   filesystem order (see [Differences](#differences-with-binmagento)).
 - When JS/CSS minification is enabled, the minified file contents differ, because a different minifier is used.
-- Minified PHTML templates (`var/view_preprocessed`) are identical.
+- PHTML templates are never minified (like `bin/magento setup:static-content:deploy --no-html-minify`).
 
 ## Requirements
 
@@ -76,7 +76,7 @@ Main options:
 | `-f, --force` | Required when Magento is not in production mode, like `bin/magento` |
 | `--mode` | Override `MAGE_MODE` from `app/etc/env.php` |
 | `--content-version`, `--refresh-content-version-only` | Same as `bin/magento` |
-| `--no-javascript`, `--no-css`, `--no-less`, `--no-js-bundle`, `--no-html-minify` | Skip parts of the deployment |
+| `--no-javascript`, `--no-css`, `--no-less`, `--no-js-bundle` | Skip parts of the deployment |
 | `--no-translations`, `--no-sri` | Skip `js-translation.json` or `sri-hashes.json` |
 | `--with-db` | Also read `dev/*` configuration and the `translation` table from the database (PDO, no Magento bootstrap) |
 | `--symlink` | `file`, `locale` or `locale-contained` (see below) |
@@ -149,11 +149,13 @@ worker. The workers only load the Composer autoloader:
   uses PHP's `fgetcsv`, array and `json_encode` semantics and the `intl` MessageFormatter, like Magento does.
 - `view-config` and `bundle`: reads the JS bundling settings with Magento's own `View` config reader and writes
   `js/bundle/bundle*.js` like `Magento\Deploy\Service\Bundle`
-- `minify-templates`: minifies all PHTML templates with Magento's own HTML minifier
 
 ## Differences with `bin/magento`
 
 - Only the `quick` strategy is implemented. `standard` and `compact` are accepted but deploy like `quick`.
+- PHTML templates are never minified: the tool always behaves as if `--no-html-minify` was given. The
+  `--no-html-minify` option is still accepted for compatibility, but it is ignored, and there is no way to enable
+  template minification.
 - **JS bundles**: Magento skips `file.js` when `file.min.js` exists, but its implementation depends on the unsorted
   filesystem order, and its cache is shared between packages. Because of this, the first deployed package of an
   area can contain a few extra non-minified files. Here the rule is applied deterministically. The result matches
@@ -188,7 +190,7 @@ their merged contents.
 cmd/go-static-deploy/       command line interface
 internal/magento/           installation details: components, modules, themes, configuration
 internal/deploy/            packages, file collection and fallback, LESS preprocessing, RequireJS,
-                            translations, bundles, minification, SRI, template minification
+                            translations, bundles, minification, SRI
 internal/phpbridge/         embedded PHP helper script and worker pool
 scripts/compare.sh          compare two pub/static trees
 ```
