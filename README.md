@@ -49,6 +49,8 @@ make dist             # cross-compiles linux/amd64, linux/arm64 and darwin/arm64
 make test             # go vet + go test (some tests compare regular expressions with PHP, if php is available)
 ```
 
+The binaries are built with `CGO_ENABLED=0`, so they are statically linked and also run on musl-based systems like Alpine.
+
 ## Usage
 
 The command line follows `bin/magento setup:static-content:deploy`:
