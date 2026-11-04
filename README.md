@@ -9,7 +9,8 @@ hands Luma themes over to `bin/magento`. This tool deploys Luma themes itself as
 
 Go does the file work (Magento's file collection and fallback rules, copying, LESS preprocessing, RequireJS
 config, minification, SRI hashes). The few parts that only work reliably in PHP are done by a small embedded PHP
-helper script. That script never starts the full Magento application and never needs a database.
+helper script. That script never starts the full Magento application and never needs a database. See
+[Where PHP is still used](#where-php-is-still-used) for the exact list.
 
 ## Results
 
@@ -37,7 +38,8 @@ production mode, and production mode with minification:
 ## Requirements
 
 - Go 1.26+ to build
-- PHP CLI that can run the Magento installation (the same PHP you use for `bin/magento`)
+- PHP CLI that can run the Magento installation (the same PHP you use for `bin/magento`). See
+  [Where PHP is still used](#where-php-is-still-used).
 - `wikimedia/less.php` in the Magento vendor folder (installed with Magento by default)
 - Optional: the `intl` PHP extension (used for translations that use the ICU message format, like Magento)
 
@@ -48,6 +50,9 @@ make build            # creates bin/go-static-deploy
 make dist             # cross-compiles linux/amd64, linux/arm64 and darwin/arm64 binaries into dist/
 make test             # go vet + go test (some tests compare regular expressions with PHP, if php is available)
 ```
+
+The tests in `internal/deploy/less_test.go` run `php -r` to compare the Go regular expressions with Magento's PCRE
+expressions. They are skipped when `php` is not in the `PATH`.
 
 The binaries are built with `CGO_ENABLED=0`, so they are statically linked and also run on musl-based systems like Alpine.
 
@@ -139,18 +144,33 @@ Your web server must follow symlinks in `pub/static` (Nginx does by default; Apa
 The script is embedded in the binary and written to `<magento-root>/var/.go-static-deploy-<pid>/` while the tool runs (so
 it also works when PHP runs in a container that only has the Magento root mounted). Go starts a pool of
 long-running PHP workers that read JSON lines on stdin and write JSON lines on stdout, so PHP starts only once per
-worker. The workers only load the Composer autoloader:
+worker. The number of workers equals `-j`. The script only loads the Composer autoloader. It never bootstraps the
+Magento application.
 
-- `config`: component registration, `config.php`/`env.php`, and optionally `core_config_data` (`dev/%`, default scope)
-- `less`: compiles a materialized LESS file with `Less_Parser`, with the same options as Magento (compressed outside
-  developer mode, inline source maps in developer mode). Then applies Magento's CSS `{{base_url_path}}` and
-  `Module::path` URL handling with Magento's own `CssResolver`.
-- `css`: the same URL handling for plain CSS files that contain `{{` or `::`
-- `i18n`: builds `js-translation.json`. This uses module, language pack (with `language.xml` inheritance), theme
-  and optionally database translations, and Magento's PCRE phrase patterns (read from the `di.xml` files). It
-  uses PHP's `fgetcsv`, array and `json_encode` semantics and the `intl` MessageFormatter, like Magento does.
-- `view-config` and `bundle`: reads the JS bundling settings with Magento's own `View` config reader and writes
-  `js/bundle/bundle*.js` like `Magento\Deploy\Service\Bundle`
+### Where PHP is still used
+
+Everything not listed here is done in Go: file collection and fallback, LESS preprocessing (`@magento_import`,
+imports, comment removal), `requirejs-config.js`, `requirejs-min-resolver.js`, minification, `sri-hashes.json` and
+`deployed_version.txt`.
+
+| PHP command | When it is called | What PHP does | Skipped with |
+|-------------|-------------------|---------------|--------------|
+| `config` | Once at startup, as a separate process (`internal/magento/env.go`) | Reads component registration (`registration.php` files), `app/etc/config.php`/`env.php` and the PHP version. With `--with-db`, also reads `core_config_data` (`dev/%`, default scope). | Always called |
+| `less` | Once per LESS root file of a package (`compileLess` in `internal/deploy/deployer.go`). Outside developer mode, the result is shared between the locales of a theme when the inputs are identical. | Compiles the materialized LESS file with `Less_Parser`, with the same options as Magento (compressed outside developer mode, inline source maps in developer mode). Then applies Magento's `{{base_url_path}}` and `Module::path` URL handling with Magento's own `CssResolver`. | `--no-less`, `--no-css` |
+| `css` | Once per plain CSS file that contains `{{` or `::` (`deployEntry` in `internal/deploy/deployer.go`). Other CSS files never reach PHP. | The same `CssResolver` URL handling | `--no-css` |
+| `i18n` | Once per package (`jsTranslation` in `internal/deploy/i18n.go`). With `--symlink locale` or `locale-contained`, also used to check whether a locale can be a symlink to the first locale. | Builds `js-translation.json` from module, language pack (with `language.xml` inheritance), theme and optionally database translations (`translation` table, with `--with-db`), using Magento's PCRE phrase patterns from the `di.xml` files. It uses PHP's `fgetcsv`, array and `json_encode` semantics and the `intl` MessageFormatter, like Magento does. | `--no-translations`, `--no-javascript` |
+| `view-config` | Once per theme, cached (`viewConfig` in `internal/deploy/bundle.go`) | Merges the JS bundling settings of the `etc/view.xml` files with Magento's own `View` config reader | `--no-js-bundle`, `--no-javascript` |
+| `bundle` | Once per package (`bundle` in `internal/deploy/bundle.go`) | Writes `js/bundle/bundle*.js` like `Magento\Deploy\Service\Bundle` | `--no-js-bundle`, `--no-javascript` |
+
+The database is only accessed with `--with-db`, and only with PDO (`config` and `i18n`).
+
+PHP is also used outside the helper script in one case: with `--luma-dispatch`, non-Hyvä themes are deployed by
+running `php bin/magento setup:static-content:deploy` (`dispatchToMagento` in `cmd/go-static-deploy/main.go`).
+This is the only case where the full Magento application is bootstrapped.
+
+To keep PHP usage to a minimum (for example for Hyvä themes), use `--no-js-bundle` and, if you don't need
+`js-translation.json`, `--no-translations`. PHP is then only used for the `config` call at startup, plus `less` and
+`css` for the LESS and CSS files described above.
 
 ## Differences with `bin/magento`
 
