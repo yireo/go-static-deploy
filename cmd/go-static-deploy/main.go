@@ -59,6 +59,7 @@ func run() int {
 	flag.BoolVar(&withDB, "with-db", false, "Also read dev/* configuration and translations from the database")
 	flag.StringVar(&symlinkMode, "symlink", "", "Use symlinks instead of copies: 'file', 'locale' or 'locale-contained'")
 	flag.StringVar(&mode, "mode", "", "Override the Magento mode from app/etc/env.php (developer, default, production)")
+	flag.StringVar(&opts.LessCompiler, "less-compiler", deploy.LessCompilerGo, "LESS compiler: 'go' (built-in less.go) or 'php' (wikimedia/less.php, like Magento)")
 	flag.BoolVar(&lumaDispatch, "luma-dispatch", false, "Dispatch non-Hyvä themes to bin/magento setup:static-content:deploy")
 	flag.BoolVar(&showVersion, "version", false, "Show the version")
 	flag.Usage = func() {
@@ -77,6 +78,10 @@ func run() int {
 	case deploy.SymlinkNone, deploy.SymlinkFile, deploy.SymlinkLocale, deploy.SymlinkLocaleContained:
 	default:
 		fmt.Fprintf(os.Stderr, "Error: --symlink must be 'file', 'locale' or 'locale-contained', got '%s'\n", symlinkMode)
+		return 1
+	}
+	if opts.LessCompiler != deploy.LessCompilerGo && opts.LessCompiler != deploy.LessCompilerPHP {
+		fmt.Fprintf(os.Stderr, "Error: --less-compiler must be 'go' or 'php', got '%s'\n", opts.LessCompiler)
 		return 1
 	}
 	if strategy != "quick" {
@@ -112,6 +117,9 @@ func run() int {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return 1
 	}
+	for _, w := range env.Warnings {
+		fmt.Fprintf(os.Stderr, "Warning: %s\n", w)
+	}
 	effectiveMode := env.Mode
 	if mode != "" {
 		effectiveMode = mode
@@ -120,8 +128,15 @@ func run() int {
 		fmt.Fprintf(os.Stderr, "Error: deploying static content is applicable only for production mode (current mode: %s). Use -f to force.\n", effectiveMode)
 		return 1
 	}
-	if !env.HasLessPHP && !opts.NoLess && !opts.NoCSS {
-		fmt.Fprintln(os.Stderr, "Warning: wikimedia/less.php is not installed; LESS files cannot be compiled")
+	lessCompiler, lessWarning, lessNotice := deploy.ResolveLessCompiler(opts.LessCompiler, effectiveMode, env.HasLessPHP)
+	opts.LessCompiler = lessCompiler
+	if !opts.NoLess && !opts.NoCSS {
+		if lessWarning != "" {
+			fmt.Fprintf(os.Stderr, "Warning: %s\n", lessWarning)
+		}
+		if lessNotice != "" && opts.Verbose {
+			fmt.Fprintf(os.Stderr, "Notice: %s\n", lessNotice)
+		}
 	}
 
 	pool := bridge.NewPool(opts.Jobs)
@@ -133,6 +148,7 @@ func run() int {
 	if opts.Verbose {
 		fmt.Fprintf(out, "go-static-deploy %s\n", version)
 		fmt.Fprintf(out, "Root: %s\nMode: %s\nPHP: %s (%s)\nJobs: %d\n", absRoot, effectiveMode, phpBinary, env.PHPVersion, opts.Jobs)
+		fmt.Fprintf(out, "LESS compiler: %s\n", opts.LessCompiler)
 		if symlinkMode != "" {
 			fmt.Fprintf(out, "Symlink mode: %s\n", symlinkMode)
 		}
@@ -192,6 +208,12 @@ func run() int {
 			fmt.Fprintf(os.Stderr, "Error deploying themes with bin/magento: %v\n", err)
 			exitCode = 1
 		}
+	}
+
+	// After bin/magento (--luma-dispatch): it removes the hashes of all areas when it starts
+	if err := d.WriteSRIHashes(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error writing sri-hashes.json: %v\n", err)
+		exitCode = 1
 	}
 
 	return exitCode

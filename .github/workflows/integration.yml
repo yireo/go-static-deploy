@@ -89,21 +89,27 @@ jobs:
           restore-keys: composer-${{ matrix.project_package }}-${{ matrix.version }}-
 
       - name: Install ${{ matrix.project_package }} ${{ matrix.version }}
+        id: install
         run: scripts/ci/install-magento.sh
 
-      - name: Deploy static content (default mode)
-        run: |
-          chmod +x bin/go-static-deploy
-          bin/go-static-deploy --version
-          bin/go-static-deploy -r "$MAGENTO_DIR" -f -j 4 -v $LOCALES
+      - run: chmod +x bin/go-static-deploy
 
-      - name: Check static content (default mode)
-        run: scripts/ci/check-static.sh "$MAGENTO_DIR" $LOCALES
+      - name: Default mode
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: scripts/ci/test-mode.sh default
 
-      - name: Deploy static content (production mode, with database)
-        run: |
-          rm -rf "$MAGENTO_DIR"/pub/static/{frontend,adminhtml,deployed_version.txt}
-          bin/go-static-deploy -r "$MAGENTO_DIR" -f --mode production --with-db -j 4 $LOCALES
+      - name: Developer mode
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: scripts/ci/test-mode.sh developer
 
-      - name: Check static content (production mode, with database)
-        run: scripts/ci/check-static.sh "$MAGENTO_DIR" $LOCALES
+      - name: Production mode (with database)
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: scripts/ci/test-mode.sh production
+
+      - name: Production mode (minification, with database)
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: scripts/ci/test-mode.sh production-minify
+
+      - name: Symlink modes
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: scripts/ci/test-mode.sh symlink

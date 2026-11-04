@@ -5,6 +5,7 @@ go 1.26.0
 require (
 	github.com/spf13/pflag v1.0.10
 	github.com/tdewolff/minify/v2 v2.24.24
+	github.com/toakleaf/less.go v0.4.2
 )
 
 require github.com/tdewolff/parse/v2 v2.8.20 // indirect

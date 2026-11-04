@@ -7,8 +7,8 @@
  * autoloader so that a few PHP-only pieces can be reused:
  *
  *  - component registration (registration.php files) and app/etc/{config,env}.php
- *  - LESS compilation with wikimedia/less.php (same library and options as Magento)
- *  - CSS url() rewriting using Magento's own CssResolver (PCRE-specific regular expressions)
+ *  - minification excludes added by plugins on Magento\Framework\View\Asset\Minification::getExcludes()
+ *  - optional: LESS compilation with wikimedia/less.php (same library and options as Magento)
  *  - JS translation dictionaries (fgetcsv, PHP array semantics, intl MessageFormatter, json_encode)
  *  - optional: reading system configuration and translations from the database (PDO only)
  *
@@ -199,6 +199,8 @@ function gsd_config(string $root, bool $withDb): array
             ?? $config['static_content_only_enabled_modules'] ?? false),
         'has_less_php' => class_exists('Less_Parser'),
         'has_intl' => class_exists('MessageFormatter'),
+        'minify_exclude_plugins' => gsd_minify_exclude_plugins($root, $config, $components['module']),
+        'asset_content_trimmed' => gsd_asset_content_trimmed(),
     ];
 
     if ($withDb) {
@@ -206,6 +208,133 @@ function gsd_config(string $root, bool $withDb): array
         $result['default_store_id'] = GsdDb::defaultStoreId($root);
     }
 
+    return $result;
+}
+
+/**
+ * Whether Magento\Framework\View\Asset\File::getContent() trims the content (Magento 2.4.9 and later). The content
+ * of LESS files imported by other LESS files is then trimmed in var/view_preprocessed.
+ */
+function gsd_asset_content_trimmed(): bool
+{
+    try {
+        $method = new ReflectionMethod('Magento\Framework\View\Asset\File', 'getContent');
+        $lines = file((string)$method->getFileName()) ?: [];
+        $body = implode('', array_slice($lines, $method->getStartLine() - 1, $method->getEndLine() - $method->getStartLine() + 1));
+        return (bool)preg_match('/trim\(\s*\$this->source->getContent\(/', $body);
+    } catch (\Throwable $e) {
+        return true;
+    }
+}
+
+/**
+ * Excludes added by plugins on Magento\Framework\View\Asset\Minification::getExcludes() (for instance
+ * PayPal_BraintreeCore adds /pay.google.com/). Only the global etc/di.xml files apply: bin/magento
+ * setup:static-content:deploy does not load area specific plugins. The plugins are called with an empty list,
+ * so only excludes that plugins add are supported.
+ *
+ * @param array<int, array{name: string, path: string}> $modules registered modules
+ * @return array{js: string[], css: string[], warnings: string[]}
+ */
+function gsd_minify_exclude_plugins(string $root, array $config, array $modules): array
+{
+    $result = ['js' => [], 'css' => [], 'warnings' => []];
+    $subjectClass = 'Magento\Framework\View\Asset\Minification';
+    $paths = [];
+    foreach ($modules as $module) {
+        $paths[$module['name']] = $module['path'];
+    }
+    $files = [$root . '/app/etc/di.xml'];
+    foreach (($config['modules'] ?? []) as $name => $enabled) {
+        if ($enabled && isset($paths[$name])) {
+            $files[] = $paths[$name] . '/etc/di.xml';
+        }
+    }
+
+    // Plugins are merged by name: later files can change the type, the sort order or disable a plugin
+    $plugins = [];
+    foreach ($files as $file) {
+        if (!is_file($file) || !str_contains((string)file_get_contents($file), 'Minification')) {
+            continue;
+        }
+        $xml = @simplexml_load_file($file);
+        if ($xml === false) {
+            continue;
+        }
+        foreach ($xml->xpath('/config/type') ?: [] as $type) {
+            if (ltrim((string)$type['name'], '\\') !== $subjectClass) {
+                continue;
+            }
+            foreach ($type->plugin as $plugin) {
+                $name = (string)$plugin['name'];
+                $plugins[$name] = ($plugins[$name] ?? ['type' => '', 'sortOrder' => 0, 'disabled' => false, 'order' => count($plugins)]);
+                if (isset($plugin['type'])) {
+                    $plugins[$name]['type'] = ltrim((string)$plugin['type'], '\\');
+                }
+                if (isset($plugin['sortOrder'])) {
+                    $plugins[$name]['sortOrder'] = (int)$plugin['sortOrder'];
+                }
+                if (isset($plugin['disabled'])) {
+                    $plugins[$name]['disabled'] = in_array(strtolower((string)$plugin['disabled']), ['true', '1'], true);
+                }
+            }
+        }
+    }
+    $plugins = array_filter($plugins, fn($p) => !$p['disabled'] && $p['type'] !== '');
+    if (!$plugins) {
+        return $result;
+    }
+    uasort($plugins, fn($a, $b) => [$a['sortOrder'], $a['order']] <=> [$b['sortOrder'], $b['order']]);
+
+    try {
+        $subject = (new ReflectionClass($subjectClass))->newInstanceWithoutConstructor();
+    } catch (\Throwable $e) {
+        $result['warnings'][] = "minification plugins: $subjectClass is not available: " . $e->getMessage();
+        return $result;
+    }
+    $instances = [];
+    foreach ($plugins as $name => $plugin) {
+        try {
+            $class = new ReflectionClass($plugin['type']);
+            $constructor = $class->getConstructor();
+            if ($constructor !== null && $constructor->getNumberOfRequiredParameters() > 0) {
+                $result['warnings'][] = "minification plugin $name ({$plugin['type']}) has constructor dependencies and is ignored";
+                continue;
+            }
+            $instances[] = $class->newInstance();
+        } catch (\Throwable $e) {
+            $result['warnings'][] = "minification plugin $name ({$plugin['type']}) is ignored: " . $e->getMessage();
+        }
+    }
+
+    // Same order as Magento's interceptors: before, around (wrapping the next plugins), after
+    $call = function (int $i, string $contentType) use (&$call, $instances, $subject): array {
+        if ($i >= count($instances)) {
+            return [];
+        }
+        $plugin = $instances[$i];
+        if (method_exists($plugin, 'beforeGetExcludes')) {
+            $arguments = $plugin->beforeGetExcludes($subject, $contentType);
+            if (is_array($arguments) && isset($arguments[0])) {
+                $contentType = (string)$arguments[0];
+            }
+        }
+        $next = fn($type) => $call($i + 1, (string)$type);
+        $excludes = method_exists($plugin, 'aroundGetExcludes')
+            ? $plugin->aroundGetExcludes($subject, $next, $contentType)
+            : $next($contentType);
+        if (method_exists($plugin, 'afterGetExcludes')) {
+            $excludes = $plugin->afterGetExcludes($subject, (array)$excludes, $contentType);
+        }
+        return array_values(array_map('strval', (array)$excludes));
+    };
+    foreach (['js', 'css'] as $contentType) {
+        try {
+            $result[$contentType] = $call(0, $contentType);
+        } catch (\Throwable $e) {
+            $result['warnings'][] = "minification plugins ($contentType): " . $e->getMessage();
+        }
+    }
     return $result;
 }
 
@@ -218,7 +347,6 @@ final class GsdWorker
     private bool $withDb;
     private array $phraseCache = [];
     private array $packCache = [];
-    private ?object $cssResolver = null;
 
     public function __construct(string $root, bool $withDb)
     {
@@ -257,8 +385,6 @@ final class GsdWorker
                 return ['pong' => true];
             case 'less':
                 return $this->compileLess($request);
-            case 'css':
-                return ['content' => $this->processCss((string)$request['content'], $request)];
             case 'i18n':
                 return ['content' => $this->buildJsTranslation($request)];
             case 'bundle':
@@ -298,52 +424,7 @@ final class GsdWorker
         if (trim($content) === '') {
             throw new RuntimeException('Compilation from source: LESS file is empty: ' . $request['asset_path']);
         }
-        return ['content' => $this->processCss($content, $request)];
-    }
-
-    private function getCssResolver(): object
-    {
-        if ($this->cssResolver === null) {
-            $this->cssResolver = new \Magento\Framework\View\Url\CssResolver();
-        }
-        return $this->cssResolver;
-    }
-
-    /**
-     * Same as the VariableNotation and ModuleNotation CSS pre-processors of Magento
-     */
-    private function processCss(string $content, array $request): string
-    {
-        $area = (string)$request['area'];
-        $themePath = (string)$request['theme'];
-        $thisPath = (string)$request['context_path'] . '/' . (string)$request['asset_path'];
-        $contextPath = (string)$request['context_path'];
-        $resolver = $this->getCssResolver();
-
-        $content = $resolver->replaceRelativeUrls($content, function ($path) use ($area, $themePath) {
-            if (!preg_match_all('/{{([_a-z]*)}}/si', (string)$path, $matches, PREG_SET_ORDER)) {
-                return $path;
-            }
-            $replacements = [];
-            foreach ($matches as $match) {
-                if (!isset($replacements[$match[0]])) {
-                    $replacements[$match[0]] = $match[1] === 'base_url_path'
-                        ? '{{base_url_path}}' . $area . ($themePath ? '/' . $themePath . '/' : '') . '{{locale}}'
-                        : '';
-                }
-            }
-            return str_replace(array_keys($replacements), $replacements, (string)$path);
-        });
-
-        return $resolver->replaceRelativeUrls($content, function ($path) use ($thisPath, $contextPath) {
-            if (!$path || !str_contains((string)$path, '::')) {
-                return $path;
-            }
-            [$module, $filePath] = explode('::', (string)$path, 2);
-            $relatedPath = $contextPath . '/' . $module . '/' . $filePath;
-            $offset = \Magento\Framework\View\FileSystem::offsetPath($relatedPath, $thisPath);
-            return \Magento\Framework\View\FileSystem::normalizePath($offset . '/' . basename($relatedPath));
-        });
+        return ['content' => $content];
     }
 
     /**

@@ -74,14 +74,14 @@ var lessSamples = []string{
 	"@import 'a', 'b';\n@import'nospace';\n",
 }
 
-func runPHP(t *testing.T, code string, input any) string {
+func runPHP(t *testing.T, code string, input any, args ...string) string {
 	t.Helper()
 	php, err := exec.LookPath("php")
 	if err != nil {
 		t.Skip("php not available")
 	}
 	data, _ := json.Marshal(input)
-	cmd := exec.Command(php, "-r", code)
+	cmd := exec.Command(php, append([]string{"-r", code, "--"}, args...)...)
 	stdin, _ := cmd.StdinPipe()
 	go func() {
 		stdin.Write(data)

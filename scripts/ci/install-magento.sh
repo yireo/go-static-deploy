@@ -10,6 +10,7 @@
 #   DB_HOST, DB_NAME, DB_USER, DB_PASSWORD  Database connection (defaults: db, magento, root, root)
 #
 # The search engine modules are disabled, so no Elasticsearch/OpenSearch server is needed.
+# The fixture theme Test/child (scripts/ci/fixtures/) is copied into app/design before the installation.
 
 set -euo pipefail
 
@@ -21,6 +22,7 @@ DB_HOST="${DB_HOST:-db}"
 DB_NAME="${DB_NAME:-magento}"
 DB_USER="${DB_USER:-root}"
 DB_PASSWORD="${DB_PASSWORD:-root}"
+fixtures="$(cd "$(dirname "$0")" && pwd)/fixtures"
 
 echo "Creating ${PROJECT_PACKAGE} ${VERSION} from ${REPOSITORY_URL} in ${MAGENTO_DIR}"
 composer create-project --no-interaction --no-install --repository-url="${REPOSITORY_URL}" \
@@ -37,6 +39,9 @@ file_put_contents("composer.json", json_encode($json, JSON_PRETTY_PRINT | JSON_U
 # Older releases depend on packages with security advisories, which Composer blocks by default.
 composer config audit.block-insecure false
 composer install --no-interaction --no-progress
+
+# Fixture theme (registered by setup:install), see scripts/ci/fixtures/
+cp -a "${fixtures}/app/." app/
 
 echo "Waiting for the database at ${DB_HOST}"
 for i in $(seq 1 60); do

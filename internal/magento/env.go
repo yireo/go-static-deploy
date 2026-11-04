@@ -34,6 +34,12 @@ type rawConfig struct {
 	StaticContentOnlyEnabledModules bool                   `json:"static_content_only_enabled_modules"`
 	HasLessPHP                      bool                   `json:"has_less_php"`
 	HasIntl                         bool                   `json:"has_intl"`
+	AssetContentTrimmed             bool                   `json:"asset_content_trimmed"`
+	MinifyExcludePlugins            struct {
+		JS       []string `json:"js"`
+		CSS      []string `json:"css"`
+		Warnings []string `json:"warnings"`
+	} `json:"minify_exclude_plugins"`
 }
 
 // Theme is a registered theme.
@@ -91,6 +97,15 @@ type Env struct {
 	StaticContentOnlyEnabledModules bool
 	HasLessPHP                      bool
 	HasIntl                         bool
+
+	// MinifyExcludePlugins contains the minification excludes added by plugins on
+	// Magento\Framework\View\Asset\Minification::getExcludes(), per content type (js, css).
+	MinifyExcludePlugins map[string][]string
+	// AssetContentTrimmed tells whether Magento trims the content of imported LESS files
+	// (Magento\Framework\View\Asset\File::getContent() in Magento 2.4.9 and later).
+	AssetContentTrimmed bool
+	// Warnings are problems found while reading the installation details.
+	Warnings []string
 }
 
 // Load reads the installation details using the PHP bridge and the filesystem.
@@ -113,6 +128,12 @@ func Load(bridge *phpbridge.Bridge) (*Env, error) {
 		StaticContentOnlyEnabledModules: raw.StaticContentOnlyEnabledModules,
 		HasLessPHP:                      raw.HasLessPHP,
 		HasIntl:                         raw.HasIntl,
+		MinifyExcludePlugins: map[string][]string{
+			"js":  raw.MinifyExcludePlugins.JS,
+			"css": raw.MinifyExcludePlugins.CSS,
+		},
+		Warnings:            raw.MinifyExcludePlugins.Warnings,
+		AssetContentTrimmed: raw.AssetContentTrimmed,
 	}
 	if env.DefaultStoreID == 0 {
 		env.DefaultStoreID = 1
@@ -161,15 +182,16 @@ func Load(bridge *phpbridge.Bridge) (*Env, error) {
 // linked to their parents by ParentCode.
 func NewEnv(root, mode string, modules []Component, enabledModules []string, themes []*Theme, cfg *Config) *Env {
 	env := &Env{
-		Root:           root,
-		Mode:           mode,
-		enabled:        map[string]bool{},
-		modulePriority: map[string]int{},
-		ModulePaths:    map[string]string{},
-		Themes:         map[string]*Theme{},
-		Config:         cfg,
-		DefaultStoreID: 1,
-		HasLessPHP:     true,
+		Root:                root,
+		Mode:                mode,
+		enabled:             map[string]bool{},
+		modulePriority:      map[string]int{},
+		ModulePaths:         map[string]string{},
+		Themes:              map[string]*Theme{},
+		Config:              cfg,
+		DefaultStoreID:      1,
+		HasLessPHP:          true,
+		AssetContentTrimmed: true,
 	}
 	if env.Config == nil {
 		env.Config = NewConfig()

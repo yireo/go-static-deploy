@@ -31,7 +31,8 @@ type Deployer struct {
 	out    io.Writer
 	logMu  sync.Mutex
 
-	ioSem chan struct{}
+	ioSem   chan struct{}
+	lessSem chan struct{}
 
 	phraseMu    sync.Mutex
 	phraseCache map[string][]string
@@ -39,6 +40,8 @@ type Deployer struct {
 	patterns    []string
 
 	sriNoticeOnce sync.Once
+	sriMu         sync.Mutex
+	sriHashes     map[string]map[string]string // per area, for sri-hashes.json per area
 
 	lessCache sync.Map
 
@@ -77,14 +80,16 @@ func New(env *magento.Env, pool *phpbridge.Pool, withDB bool, opts Options, out 
 		mode:        mode,
 		out:         out,
 		ioSem:       make(chan struct{}, opts.Jobs*8),
+		lessSem:     make(chan struct{}, opts.Jobs),
 		phraseCache: map[string][]string{},
 		viewCache:   map[*magento.Theme]*bundleConfig{},
+		sriHashes:   map[string]map[string]string{},
 	}
 	d.minify = newMinification(
 		!developer && cfg.Flag("dev/js/minify_files"),
 		!developer && cfg.Flag("dev/css/minify_files"),
-		cfg.List("dev/js/minify_exclude"),
-		cfg.List("dev/css/minify_exclude"),
+		append(cfg.List("dev/js/minify_exclude"), env.MinifyExcludePlugins["js"]...),
+		append(cfg.List("dev/css/minify_exclude"), env.MinifyExcludePlugins["css"]...),
 	)
 	return d
 }
@@ -160,6 +165,9 @@ func (d *Deployer) WriteVersion() (string, error) {
 
 // Run deploys all packages.
 func (d *Deployer) Run(groups [][]*Package) []Result {
+	if d.sriEnabled() && d.sriPerArea() {
+		d.removeSRIHashes()
+	}
 	var results []Result
 	var mu sync.Mutex
 	sem := make(chan struct{}, d.opts.Jobs)
@@ -436,8 +444,8 @@ func (d *Deployer) deployPackage(p *Package, base *Package, baseResult *Result) 
 		}
 	}
 
-	if !d.opts.NoSRI && !d.opts.NoJavascript && d.sriEnabled() {
-		if err := p.writeSRIHashes(outDir); err != nil {
+	if d.sriEnabled() {
+		if err := p.writeSRIHashes(outDir, entries); err != nil {
 			run.errorf("%s: %v", sriFile, err)
 		}
 	}
@@ -454,7 +462,7 @@ func (d *Deployer) canSymlinkLocale(p, base *Package) (bool, string) {
 	if d.mode == "developer" {
 		return false, "developer mode (source maps contain the locale)"
 	}
-	if !d.opts.NoSRI && !d.opts.NoJavascript && d.sriEnabled() {
+	if d.sriEnabled() {
 		d.sriNoticeOnce.Do(func() {
 			d.logf("Notice: sri-hashes.json contains locale specific paths, so additional locales are deployed in full instead of as directory symlinks\n")
 		})
@@ -495,19 +503,9 @@ func (d *Deployer) deployEntry(run *packageRun, e entry) error {
 		}
 		changed := false
 		if bytes.Contains(data, []byte("{{")) || bytes.Contains(data, []byte("::")) {
-			resp, err := d.php.Call(map[string]any{
-				"cmd":          "css",
-				"content":      string(data),
-				"area":         run.p.Area,
-				"theme":        run.p.Theme.Code,
-				"context_path": run.p.Path(),
-				"asset_path":   e.rel(),
-			})
-			if err != nil {
-				return err
-			}
-			if resp.Content != string(data) {
-				data, changed = []byte(resp.Content), true
+			content := processCSS(string(data), run.p.Area, run.p.Theme.Code, run.p.Path(), e.rel())
+			if content != string(data) {
+				data, changed = []byte(content), true
 			}
 		}
 		if e.target != e.rel() && !e.srcIsMin {
@@ -532,19 +530,27 @@ type lessResult struct {
 // the result only depends on the inputs, so it is shared between the locales of a theme.
 func (d *Deployer) compileLess(run *packageRun, e entry, file, hash string) error {
 	compile := func() ([]byte, error) {
-		resp, err := d.php.Call(map[string]any{
-			"cmd":          "less",
-			"file":         file,
-			"mode":         d.mode,
-			"area":         run.p.Area,
-			"theme":        run.p.Theme.Code,
-			"context_path": run.p.Path(),
-			"asset_path":   e.rel(),
-		})
-		if err != nil {
-			return nil, err
+		d.lessSem <- struct{}{}
+		defer func() { <-d.lessSem }()
+		var content string
+		if d.opts.LessCompiler == LessCompilerPHP {
+			resp, err := d.php.Call(map[string]any{
+				"cmd":        "less",
+				"file":       file,
+				"mode":       d.mode,
+				"asset_path": e.rel(),
+			})
+			if err != nil {
+				return nil, err
+			}
+			content = resp.Content
+		} else {
+			var err error
+			if content, err = compileLessGo(file, e.rel(), d.mode != "developer"); err != nil {
+				return nil, err
+			}
 		}
-		return []byte(resp.Content), nil
+		return []byte(processCSS(content, run.p.Area, run.p.Theme.Code, run.p.Path(), e.rel())), nil
 	}
 	var data []byte
 	var err error

@@ -115,13 +115,13 @@ type relatedFile struct {
 	asset  asset
 }
 
-// process pre-processes a LESS file. Like Magento's File::getContent(), the content of
-// imported (related) files is trimmed.
+// process pre-processes a LESS file. Like Magento's File::getContent() (2.4.9 and later), the
+// content of imported (related) files is trimmed.
 func (m *lessMaterializer) process(a asset, content string, related bool) error {
 	content = m.processMagentoImport(a, content)
 	content, relatedFiles := m.processImport(a, content)
 	if related {
-		content = phpTrim(content)
+		content = m.trimContent(content)
 	}
 
 	target := m.tmpPath(a)
@@ -157,7 +157,7 @@ func (m *lessMaterializer) process(a asset, content string, related bool) error 
 			}
 			continue
 		}
-		m.files[relTarget] = &materializedFile{content: []byte(phpTrim(string(data)))}
+		m.files[relTarget] = &materializedFile{content: []byte(m.trimContent(string(data)))}
 		if err := writeFile(relTarget, m.files[relTarget].content); err != nil {
 			return err
 		}
@@ -463,6 +463,14 @@ func removeComments(content string) string {
 	}
 	sb.WriteString(content[last:])
 	return sb.String()
+}
+
+// trimContent trims the content of a related file when the installed Magento version does.
+func (m *lessMaterializer) trimContent(content string) string {
+	if !m.p.d.env.AssetContentTrimmed {
+		return content
+	}
+	return phpTrim(content)
 }
 
 // phpTrim mirrors PHP's trim() with the default character list.

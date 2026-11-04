@@ -3,6 +3,7 @@ package deploy
 import (
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"os"
@@ -14,35 +15,124 @@ import (
 
 const sriFile = "sri-hashes.json"
 
+// sriAreas are the areas whose sri-hashes.json Magento removes when a deployment starts.
+var sriAreas = []string{"base", "frontend", "adminhtml"}
+
 // sriEnabled tells whether the installed Magento_Csp module writes sri-hashes.json during deployment.
 func (d *Deployer) sriEnabled() bool {
-	if !d.env.IsEnabled("Magento_Csp") {
+	if d.opts.NoSRI || d.opts.NoJavascript || !d.env.IsEnabled("Magento_Csp") {
 		return false
 	}
 	return fileExists(filepath.Join(d.env.ModulePaths["Magento_Csp"], "Model", "Deploy", "Package", "Processor", "PostProcessor", "Integrity.php"))
 }
 
-// writeSRIHashes mirrors the Magento_Csp Integrity post processor: a sha256 hash of every
-// deployed JavaScript file of the package.
-func (p *Package) writeSRIHashes(outDir string) error {
+// sriPerArea tells whether Magento_Csp stores the hashes per area in pub/static/<area>/sri-hashes.json
+// (Magento\Csp\Model\SubresourceIntegrity\Storage\File, in recent Magento and Mage-OS versions).
+// Older versions write sri-hashes.json in every package.
+func (d *Deployer) sriPerArea() bool {
+	return fileExists(filepath.Join(d.env.ModulePaths["Magento_Csp"], "Model", "SubresourceIntegrity", "Storage", "File.php"))
+}
+
+// removeSRIHashes mirrors the Magento_Csp RemoveAllAssetIntegrityHashes plugin: the hashes of all areas are
+// removed when a deployment starts.
+func (d *Deployer) removeSRIHashes() {
+	for _, area := range sriAreas {
+		_ = os.Remove(filepath.Join(d.env.Root, "pub", "static", area, sriFile))
+	}
+}
+
+// WriteSRIHashes writes pub/static/<area>/sri-hashes.json with the hashes collected by Run, merged with the
+// hashes already in the file (for instance of themes deployed by bin/magento with --luma-dispatch).
+func (d *Deployer) WriteSRIHashes() error {
+	d.sriMu.Lock()
+	defer d.sriMu.Unlock()
+	for area, hashes := range d.sriHashes {
+		file := filepath.Join(d.env.Root, "pub", "static", area, sriFile)
+		merged := map[string]string{}
+		if data, err := os.ReadFile(file); err == nil {
+			_ = json.Unmarshal(data, &merged)
+		}
+		for k, v := range hashes {
+			merged[k] = v
+		}
+		if err := writeFile(file, phpJSONObject(merged)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// writeSRIHashes mirrors the Magento_Csp Integrity post processor for a deployed package.
+func (p *Package) writeSRIHashes(outDir string, entries []entry) error {
+	hashes, err := p.deployedJSHashes(outDir)
+	if err != nil {
+		return err
+	}
+	if !p.d.sriPerArea() {
+		// Older Magento_Csp versions: a sha256 hash of every deployed JavaScript file of the package
+		return os.WriteFile(filepath.Join(outDir, sriFile), phpJSONObject(hashes), 0o644)
+	}
+
+	// The Integrity post processor hashes the source file of every JavaScript file of the package, under its
+	// name without minification sign. Generated files (RequireJS config, bundles) are hashed as deployed,
+	// except requirejs-min-resolver.js, which Magento creates after the post processors.
+	for _, e := range entries {
+		if e.kind != kindJS {
+			continue
+		}
+		src := p.Resolve(e.module, e.name)
+		if src == "" {
+			src = e.source
+		}
+		sum, err := fileHash(src)
+		if err != nil {
+			return err
+		}
+		// file.min.js stays listed (with the deployed hash) when it is a source file of its own
+		if e.target != e.rel() && p.Resolve(e.module, strings.TrimSuffix(e.name, ".js")+".min.js") == "" {
+			delete(hashes, p.Path()+"/"+e.target)
+		}
+		hashes[p.Path()+"/"+e.rel()] = sum
+	}
+	delete(hashes, p.Path()+"/"+requireJsMinResolver)
+	delete(hashes, p.Path()+"/"+p.d.minifiedName(p.Path(), requireJsMinResolver))
+
+	p.d.sriMu.Lock()
+	defer p.d.sriMu.Unlock()
+	if p.d.sriHashes[p.Area] == nil {
+		p.d.sriHashes[p.Area] = map[string]string{}
+	}
+	for k, v := range hashes {
+		p.d.sriHashes[p.Area][k] = v
+	}
+	return nil
+}
+
+// deployedJSHashes returns the sha256 hash of every deployed JavaScript file of the package.
+func (p *Package) deployedJSHashes(outDir string) (map[string]string, error) {
 	hashes := map[string]string{}
 	err := filepath.WalkDir(outDir, func(f string, entry fs.DirEntry, err error) error {
 		if err != nil || entry.IsDir() || !strings.HasSuffix(f, ".js") {
 			return err
 		}
-		data, err := os.ReadFile(f)
+		sum, err := fileHash(f)
 		if err != nil {
 			return err
 		}
 		rel, _ := filepath.Rel(outDir, f)
-		sum := sha256.Sum256(data)
-		hashes[p.Path()+"/"+filepath.ToSlash(rel)] = "sha256-" + base64.StdEncoding.EncodeToString(sum[:])
+		hashes[p.Path()+"/"+filepath.ToSlash(rel)] = sum
 		return nil
 	})
+	return hashes, err
+}
+
+func fileHash(f string) (string, error) {
+	data, err := os.ReadFile(f)
 	if err != nil {
-		return err
+		return "", err
 	}
-	return os.WriteFile(filepath.Join(outDir, sriFile), phpJSONObject(hashes), 0o644)
+	sum := sha256.Sum256(data)
+	return "sha256-" + base64.StdEncoding.EncodeToString(sum[:]), nil
 }
 
 // phpJSONObject encodes a string map like PHP's json_encode() with default flags.
