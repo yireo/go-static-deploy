@@ -1,3 +1,6 @@
 {"time":"2026-11-02T08:26:02.788Z","line":"v2-native-ready","host":"2.1.4"}
 {"time":"2026-11-02T13:13:55.959Z","line":"v2-native-ready","host":"2.1.4"}
 {"time":"2026-11-02T14:39:10.645Z","line":"v2-native-ready","host":"2.1.4"}
+{"time":"2026-11-04T10:20:48.002Z","line":"v2-native-ready","host":"2.0.25"}
+{"time":"2026-11-04T10:22:03.691Z","line":"v2-native-paused","sessionID":"ses_e59eb81faffejXKbKZaU3OXrei","reason":"session.execution.failed"}
+{"time":"2026-11-04T10:44:28.001Z","line":"v2-native-paused","sessionID":"ses_e59eb81faffejXKbKZaU3OXrei","reason":"session.execution.interrupted"}

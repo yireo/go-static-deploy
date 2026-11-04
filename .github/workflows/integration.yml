@@ -1,0 +1,109 @@
+name: Integration tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    name: Build and unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - run: make test
+      - run: make build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: go-static-deploy
+          path: bin/go-static-deploy
+          if-no-files-found: error
+
+  matrix:
+    name: Read test matrix
+    runs-on: ubuntu-latest
+    outputs:
+      include: ${{ steps.read.outputs.include }}
+    steps:
+      - uses: actions/checkout@v5
+      - id: read
+        run: echo "include=$(jq -c . .github/test-matrix.json)" >> "$GITHUB_OUTPUT"
+
+  deploy:
+    name: ${{ matrix.name }}
+    needs: [build, matrix]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.matrix.outputs.include) }}
+    container:
+      image: ${{ matrix.php_image }}
+    services:
+      db:
+        image: ${{ matrix.db_image }}
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: magento
+          MARIADB_ROOT_PASSWORD: root
+          MARIADB_DATABASE: magento
+    env:
+      COMPOSER_ALLOW_SUPERUSER: 1
+      COMPOSER_AUTH: ${{ secrets.COMPOSER_AUTH }}
+      COMPOSER_CACHE_DIR: /tmp/composer-cache
+      MAGENTO_DIR: /var/www/magento
+      REPOSITORY_URL: ${{ matrix.repository_url }}
+      PROJECT_PACKAGE: ${{ matrix.project_package }}
+      VERSION: ${{ matrix.version }}
+      DB_HOST: db
+      LOCALES: en_US nl_NL
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Install system packages, PHP extensions and Composer
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends git unzip
+          curl -sSLf -o /usr/local/bin/install-php-extensions \
+            https://github.com/mlocati/docker-php-extension-installer/releases/latest/download/install-php-extensions
+          chmod +x /usr/local/bin/install-php-extensions
+          install-php-extensions bcmath ftp gd intl pdo_mysql soap sockets xsl zip @composer
+          echo 'memory_limit = -1' > /usr/local/etc/php/conf.d/memory-limit.ini
+          php -v
+          composer --version
+
+      - uses: actions/checkout@v5
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: go-static-deploy
+          path: bin
+
+      - uses: actions/cache@v4
+        with:
+          path: /tmp/composer-cache
+          key: composer-${{ matrix.project_package }}-${{ matrix.version }}-${{ matrix.php_image }}
+          restore-keys: composer-${{ matrix.project_package }}-${{ matrix.version }}-
+
+      - name: Install ${{ matrix.project_package }} ${{ matrix.version }}
+        run: scripts/ci/install-magento.sh
+
+      - name: Deploy static content (default mode)
+        run: |
+          chmod +x bin/go-static-deploy
+          bin/go-static-deploy --version
+          bin/go-static-deploy -r "$MAGENTO_DIR" -f -j 4 -v $LOCALES
+
+      - name: Check static content (default mode)
+        run: scripts/ci/check-static.sh "$MAGENTO_DIR" $LOCALES
+
+      - name: Deploy static content (production mode, with database)
+        run: |
+          rm -rf "$MAGENTO_DIR"/pub/static/{frontend,adminhtml,deployed_version.txt}
+          bin/go-static-deploy -r "$MAGENTO_DIR" -f --mode production --with-db -j 4 $LOCALES
+
+      - name: Check static content (production mode, with database)
+        run: scripts/ci/check-static.sh "$MAGENTO_DIR" $LOCALES

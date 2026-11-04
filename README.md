@@ -186,6 +186,34 @@ scripts/compare.sh /tmp/native-static pub/static
 `scripts/compare.sh` compares file lists and contents. It compares JSON files semantically and JavaScript bundles by
 their merged contents.
 
+## Integration tests
+
+The GitHub Actions workflow `.github/workflows/integration.yml` builds the tool and tests it against real Magento and
+Mage-OS installations. Each job installs a project with `composer create-project`, runs `bin/magento setup:install`
+(with the Elasticsearch/OpenSearch modules disabled, so no search server is needed), runs `bin/go-static-deploy` in
+default mode and in production mode with `--with-db`, and checks the output with `scripts/ci/check-static.sh`.
+
+The matrix is configured in `.github/test-matrix.json`. Each entry is one job:
+
+```json
+{
+  "name": "Magento 2.4.8-p5 / PHP 8.4 / MariaDB 11.4",
+  "repository_url": "https://mirror.mage-os.org/",
+  "project_package": "magento/project-community-edition",
+  "version": "2.4.8-p5",
+  "php_image": "php:8.4-cli",
+  "db_image": "mariadb:11.4"
+}
+```
+
+- `repository_url`: Composer repository. Magento uses the public `https://mirror.mage-os.org/` mirror, Mage-OS uses
+  `https://repo.mage-os.org/`. To use `https://repo.magento.com/`, add a `COMPOSER_AUTH` repository secret with the
+  authentication JSON.
+- `php_image`: an official `php:*-cli` image (extensions are installed with `docker-php-extension-installer`)
+- `db_image`: a `mysql:*` or `mariadb:*` image
+
+The scripts in `scripts/ci/` can also be run locally inside a PHP container.
+
 ## Project structure
 
 ```
@@ -195,4 +223,6 @@ internal/deploy/            packages, file collection and fallback, LESS preproc
                             translations, bundles, minification, SRI
 internal/phpbridge/         embedded PHP helper script and worker pool
 scripts/compare.sh          compare two pub/static trees
+scripts/ci/                 install Magento and check the output in the integration tests
+.github/                    integration test workflow and matrix
 ```

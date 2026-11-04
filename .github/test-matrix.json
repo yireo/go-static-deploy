@@ -1,0 +1,106 @@
+[
+  {
+    "name": "Magento 2.4.6-p15 / PHP 8.1 / MySQL 8.0",
+    "repository_url": "https://mirror.mage-os.org/",
+    "project_package": "magento/project-community-edition",
+    "version": "2.4.6-p15",
+    "php_image": "php:8.1-cli",
+    "db_image": "mysql:8.0"
+  },
+  {
+    "name": "Magento 2.4.6-p15 / PHP 8.2 / MariaDB 10.6",
+    "repository_url": "https://mirror.mage-os.org/",
+    "project_package": "magento/project-community-edition",
+    "version": "2.4.6-p15",
+    "php_image": "php:8.2-cli",
+    "db_image": "mariadb:10.6"
+  },
+  {
+    "name": "Magento 2.4.7-p10 / PHP 8.2 / MySQL 8.0",
+    "repository_url": "https://mirror.mage-os.org/",
+    "project_package": "magento/project-community-edition",
+    "version": "2.4.7-p10",
+    "php_image": "php:8.2-cli",
+    "db_image": "mysql:8.0"
+  },
+  {
+    "name": "Magento 2.4.7-p10 / PHP 8.3 / MariaDB 10.6",
+    "repository_url": "https://mirror.mage-os.org/",
+    "project_package": "magento/project-community-edition",
+    "version": "2.4.7-p10",
+    "php_image": "php:8.3-cli",
+    "db_image": "mariadb:10.6"
+  },
+  {
+    "name": "Magento 2.4.8-p5 / PHP 8.3 / MySQL 8.4",
+    "repository_url": "https://mirror.mage-os.org/",
+    "project_package": "magento/project-community-edition",
+    "version": "2.4.8-p5",
+    "php_image": "php:8.3-cli",
+    "db_image": "mysql:8.4"
+  },
+  {
+    "name": "Magento 2.4.8-p5 / PHP 8.4 / MariaDB 11.4",
+    "repository_url": "https://mirror.mage-os.org/",
+    "project_package": "magento/project-community-edition",
+    "version": "2.4.8-p5",
+    "php_image": "php:8.4-cli",
+    "db_image": "mariadb:11.4"
+  },
+  {
+    "name": "Magento 2.4.9 / PHP 8.4 / MySQL 8.4",
+    "repository_url": "https://mirror.mage-os.org/",
+    "project_package": "magento/project-community-edition",
+    "version": "2.4.9",
+    "php_image": "php:8.4-cli",
+    "db_image": "mysql:8.4"
+  },
+  {
+    "name": "Magento 2.4.9 / PHP 8.5 / MariaDB 11.4",
+    "repository_url": "https://mirror.mage-os.org/",
+    "project_package": "magento/project-community-edition",
+    "version": "2.4.9",
+    "php_image": "php:8.5-cli",
+    "db_image": "mariadb:11.4"
+  },
+  {
+    "name": "Mage-OS 3.0.0 / PHP 8.3 / MySQL 8.4",
+    "repository_url": "https://repo.mage-os.org/",
+    "project_package": "mage-os/project-community-edition",
+    "version": "3.0.0",
+    "php_image": "php:8.3-cli",
+    "db_image": "mysql:8.4"
+  },
+  {
+    "name": "Mage-OS 3.6.0 / PHP 8.4 / MariaDB 11.4",
+    "repository_url": "https://repo.mage-os.org/",
+    "project_package": "mage-os/project-community-edition",
+    "version": "3.6.0",
+    "php_image": "php:8.4-cli",
+    "db_image": "mariadb:11.4"
+  },
+  {
+    "name": "Mage-OS 3.6.0 / PHP 8.5 / MySQL 8.4",
+    "repository_url": "https://repo.mage-os.org/",
+    "project_package": "mage-os/project-community-edition",
+    "version": "3.6.0",
+    "php_image": "php:8.5-cli",
+    "db_image": "mysql:8.4"
+  },
+  {
+    "name": "Mage-OS 4.0.0 / PHP 8.4 / MySQL 8.4",
+    "repository_url": "https://repo.mage-os.org/",
+    "project_package": "mage-os/project-community-edition",
+    "version": "4.0.0",
+    "php_image": "php:8.4-cli",
+    "db_image": "mysql:8.4"
+  },
+  {
+    "name": "Mage-OS 4.0.0 / PHP 8.5 / MariaDB 11.4",
+    "repository_url": "https://repo.mage-os.org/",
+    "project_package": "mage-os/project-community-edition",
+    "version": "4.0.0",
+    "php_image": "php:8.5-cli",
+    "db_image": "mariadb:11.4"
+  }
+]
