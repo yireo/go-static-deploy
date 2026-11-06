@@ -41,6 +41,18 @@ if (str_ends_with($argv[1], "sri-hashes.json")) {
     };
     $a = $normalize($a);
     $b = $normalize($b);
+    if ($a != $b) {
+        // Print a few differing keys, to explain the difference
+        foreach ([
+            "only in native" => array_keys(array_diff_key($a, $b)),
+            "only in go-static-deploy" => array_keys(array_diff_key($b, $a)),
+            "different hash" => array_keys(array_diff_assoc(array_intersect_key($a, $b), $b)),
+        ] as $what => $keys) {
+            if ($keys) {
+                echo "    $what (", count($keys), "): ", implode(", ", array_slice($keys, 0, 5)), "\n";
+            }
+        }
+    }
 }
 exit($a == $b ? 0 : 1);'
 
@@ -100,6 +112,7 @@ for package in "${packages[@]}"; do
     only_native=$(comm -23 "$tmp/native.txt" "$tmp/ours.txt" | grep -v '^js/bundle/')
     only_ours=$(comm -13 "$tmp/native.txt" "$tmp/ours.txt" | grep -v '^js/bundle/')
     different=()
+    details=()
     while IFS= read -r file; do
         [ -z "$file" ] && continue
         a="$native/$package/$file"
@@ -110,16 +123,19 @@ for package in "${packages[@]}"; do
         if [ "$minified" = 1 ] && [[ "$file" == *.min.js || "$file" == *.min.css ]]; then
             continue
         fi
-        if [[ "$file" == *.json ]] && php -r "$php_compare_json" "$a" "$b" "$minified"; then
+        detail=""
+        if [[ "$file" == *.json ]] && detail=$(php -r "$php_compare_json" "$a" "$b" "$minified"); then
             continue
         fi
         different+=("$file")
+        details+=("$detail")
     done < <(comm -12 "$tmp/native.txt" "$tmp/ours.txt")
 
     read -r hash_native count_native_bundled ignored_native < <(php -r "$php_bundle_contents" "$native/$package" "$minified")
     read -r hash_ours count_ours_bundled ignored_ours < <(php -r "$php_bundle_contents" "$ours/$package" "$minified")
     if [ "$hash_native" != "$hash_ours" ]; then
         different+=("js/bundle/* (merged contents: native $count_native_bundled entries, go $count_ours_bundled entries)")
+        details+=("")
     fi
 
     count_native=$(wc -l < "$tmp/native.txt")
@@ -136,8 +152,9 @@ for package in "${packages[@]}"; do
         echo "  only in go-static-deploy ($(echo "$only_ours" | wc -l)):"
         echo "$only_ours" | sed 's/^/    /' | head -20
     fi
-    for file in "${different[@]}"; do
-        echo "  differs: $file"
+    for i in "${!different[@]}"; do
+        echo "  differs: ${different[$i]}"
+        [ -n "${details[$i]}" ] && echo "${details[$i]}"
     done
     if [ -n "$only_native" ] || [ -n "$only_ours" ] || [ ${#different[@]} -gt 0 ]; then
         total_diff=1
@@ -158,8 +175,9 @@ for area in frontend adminhtml; do
     elif [ ! -e "$a" ]; then
         echo "== $area/sri-hashes.json: only in go-static-deploy"
         total_diff=1
-    elif ! php -r "$php_compare_json" "$a" "$b" "$minified"; then
+    elif ! detail=$(php -r "$php_compare_json" "$a" "$b" "$minified"); then
         echo "== $area/sri-hashes.json: differs"
+        [ -n "$detail" ] && echo "$detail"
         total_diff=1
     else
         echo "== $area/sri-hashes.json: same"

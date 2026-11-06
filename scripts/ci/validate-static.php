@@ -24,6 +24,8 @@ final class StaticValidator
     private bool $sri;
     /** 'area': pub/static/<area>/sri-hashes.json (Magento 2.4.6 - 2.4.8), 'package': per package */
     private string $sriLayout;
+    /** Magento_Csp hashes requirejs-min-resolver.js (GenerateAssetIntegrity::afterCreateMinResolverAsset) */
+    private bool $sriMinResolver;
     /** @var array<string, array<string, string>> expected SRI hashes per area */
     private array $sriExpected = [];
     /** @var array<string, array<string, bool>> optional SRI entries per area (written after Magento's post processors) */
@@ -37,6 +39,12 @@ final class StaticValidator
         $this->static = $root . '/pub/static';
         $this->sri = !$options['no-sri'] && $this->sriInstalled();
         $this->sriLayout = $this->detectSriLayout();
+        $this->sriMinResolver = false;
+        foreach (glob($this->root . '/vendor/*/module-csp/Plugin/GenerateAssetIntegrity.php') ?: [] as $file) {
+            if (str_contains((string)file_get_contents($file), 'afterCreateMinResolverAsset')) {
+                $this->sriMinResolver = true;
+            }
+        }
     }
 
     /**
@@ -452,7 +460,9 @@ final class StaticValidator
         foreach ($files as $rel) {
             if (str_ends_with($rel, '.js')) {
                 $expected["$package/$rel"] = 'sha256-' . base64_encode(hash_file('sha256', "$dir/$rel", true));
-                if (preg_match('/^requirejs-min-resolver(\.min)?\.js$/', $rel)) {
+                // Without the afterCreateMinResolverAsset plugin (Magento 2.4.6 - 2.4.8), requirejs-min-resolver.js is
+                // written after the Integrity post processor and has no hash
+                if (!$this->sriMinResolver && preg_match('/^requirejs-min-resolver(\.min)?\.js$/', $rel)) {
                     $optional["$package/$rel"] = true;
                 }
             }

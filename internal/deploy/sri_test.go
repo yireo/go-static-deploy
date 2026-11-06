@@ -137,12 +137,6 @@ func TestPackageDeployedSRIHashes(t *testing.T) {
 	pkg := "frontend/Vendor/child/en_US/"
 	for rel := range deployed {
 		want, _ := fileHash(filepath.Join(outDir, rel))
-		if rel == "requirejs-min-resolver.min.js" {
-			if _, ok := hashes[pkg+rel]; ok {
-				t.Errorf("unexpected entry %s", rel)
-			}
-			continue
-		}
 		if hashes[pkg+rel] != want {
 			t.Errorf("hash of %s = %q, want %q", rel, hashes[pkg+rel], want)
 		}

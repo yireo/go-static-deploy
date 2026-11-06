@@ -106,9 +106,8 @@ func (p *Package) writeSRIHashes(outDir string, entries []entry) error {
 		return os.WriteFile(filepath.Join(outDir, sriFile), phpJSONObject(hashes), 0o644)
 	case sriLayoutPackageDeployed:
 		// The Integrity post processor hashes the deployed (minified) file of every JavaScript file of the
-		// package. requirejs-min-resolver.js is created after the post processors.
-		delete(hashes, p.Path()+"/"+requireJsMinResolver)
-		delete(hashes, p.Path()+"/"+p.d.minifiedName(p.Path(), requireJsMinResolver))
+		// package. requirejs-min-resolver.js is created after the post processors, but the
+		// GenerateAssetIntegrity plugin (afterCreateMinResolverAsset) adds its hash as well.
 		return os.WriteFile(filepath.Join(outDir, sriFile), phpJSONObject(hashes), 0o644)
 	}
 

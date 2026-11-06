@@ -159,7 +159,7 @@ Your web server must follow symlinks in `pub/static` (Nginx does by default; Apa
    the deployment starts, and every package adds the sha256 hashes of its JavaScript files (source files under their
    name without `.min`, generated files and bundles as deployed, except `requirejs-min-resolver.js`). Magento 2.4.9
    and Mage-OS 3 and later write a `sri-hashes.json` in every package with the hashes of the deployed JavaScript
-   files (under their deployed name, except `requirejs-min-resolver.js`). Older versions write a `sri-hashes.json`
+   files (under their deployed name, including `requirejs-min-resolver.js`). Older versions write a `sri-hashes.json`
    in every package with the hashes of all deployed JavaScript files.
 9. `pub/static/deployed_version.txt` is written like Magento does.
 
