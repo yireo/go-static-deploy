@@ -10,23 +10,31 @@ import (
 
 // LESS compilers
 const (
-	LessCompilerGo  = "go"
-	LessCompilerPHP = "php"
+	LessCompilerAuto = "auto"
+	LessCompilerGo   = "go"
+	LessCompilerPHP  = "php"
 )
 
-// ResolveLessCompiler returns the LESS compiler to use. Developer mode needs source maps,
-// which less.go cannot generate in combination with math=always, so wikimedia/less.php is
-// preferred there when it is installed. A warning is returned for a fallback that changes
-// the output, a notice for an informational change.
-func ResolveLessCompiler(requested, mode string, hasLessPHP bool) (compiler, warning, notice string) {
+// ResolveLessCompiler returns the LESS compiler to use. By default (auto), wikimedia/less.php
+// is used when it is installed, because its output is identical to bin/magento. When the
+// installed Magento version generates source maps in developer mode, less.php is also
+// preferred over an explicitly requested less.go, which cannot generate source maps in
+// combination with math=always. A warning is returned for a fallback that changes the
+// output, a notice for an informational change.
+func ResolveLessCompiler(requested, mode string, hasLessPHP, sourceMaps bool) (compiler, warning, notice string) {
+	developerSourceMaps := mode == "developer" && sourceMaps
 	switch {
-	case requested == LessCompilerPHP && !hasLessPHP:
-		return LessCompilerGo, "wikimedia/less.php is not installed; using the Go LESS compiler instead", ""
-	case requested == LessCompilerPHP:
+	case requested != LessCompilerGo && hasLessPHP:
 		return LessCompilerPHP, "", ""
-	case mode == "developer" && hasLessPHP:
+	case requested == LessCompilerPHP:
+		return LessCompilerGo, "wikimedia/less.php is not installed; using the Go LESS compiler instead", ""
+	case requested == LessCompilerAuto && developerSourceMaps:
+		return LessCompilerGo, "wikimedia/less.php is not installed; LESS files are compiled with the Go LESS compiler, without source maps", ""
+	case requested == LessCompilerAuto:
+		return LessCompilerGo, "wikimedia/less.php is not installed; LESS files are compiled with the Go LESS compiler, so the CSS differs from bin/magento", ""
+	case developerSourceMaps && hasLessPHP:
 		return LessCompilerPHP, "", "developer mode: using wikimedia/less.php to generate source maps"
-	case mode == "developer":
+	case developerSourceMaps:
 		return LessCompilerGo, "wikimedia/less.php is not installed; LESS files are compiled without source maps", ""
 	default:
 		return LessCompilerGo, "", ""

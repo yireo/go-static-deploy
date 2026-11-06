@@ -43,6 +43,9 @@ type Deployer struct {
 	sriMu         sync.Mutex
 	sriHashes     map[string]map[string]string // per area, for sri-hashes.json per area
 
+	sriLayoutOnce  sync.Once
+	sriLayoutValue string
+
 	lessCache sync.Map
 
 	viewMu    sync.Mutex
@@ -165,7 +168,7 @@ func (d *Deployer) WriteVersion() (string, error) {
 
 // Run deploys all packages.
 func (d *Deployer) Run(groups [][]*Package) []Result {
-	if d.sriEnabled() && d.sriPerArea() {
+	if d.sriEnabled() && d.sriLayout() != sriLayoutPackage {
 		d.removeSRIHashes()
 	}
 	var results []Result
@@ -535,10 +538,11 @@ func (d *Deployer) compileLess(run *packageRun, e entry, file, hash string) erro
 		var content string
 		if d.opts.LessCompiler == LessCompilerPHP {
 			resp, err := d.php.Call(map[string]any{
-				"cmd":        "less",
-				"file":       file,
-				"mode":       d.mode,
-				"asset_path": e.rel(),
+				"cmd":         "less",
+				"file":        file,
+				"mode":        d.mode,
+				"source_maps": d.env.LessSourceMaps,
+				"asset_path":  e.rel(),
 			})
 			if err != nil {
 				return nil, err

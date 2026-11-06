@@ -30,6 +30,6 @@ type Options struct {
 	Verbose        bool
 	// Mode overrides the Magento mode found in app/etc/env.php (developer, production, default).
 	Mode string
-	// LessCompiler selects the LESS compiler: LessCompilerGo (default) or LessCompilerPHP.
+	// LessCompiler selects the LESS compiler: LessCompilerPHP or LessCompilerGo (see ResolveLessCompiler).
 	LessCompiler string
 }

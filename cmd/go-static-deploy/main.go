@@ -59,7 +59,7 @@ func run() int {
 	flag.BoolVar(&withDB, "with-db", false, "Also read dev/* configuration and translations from the database")
 	flag.StringVar(&symlinkMode, "symlink", "", "Use symlinks instead of copies: 'file', 'locale' or 'locale-contained'")
 	flag.StringVar(&mode, "mode", "", "Override the Magento mode from app/etc/env.php (developer, default, production)")
-	flag.StringVar(&opts.LessCompiler, "less-compiler", deploy.LessCompilerGo, "LESS compiler: 'go' (built-in less.go) or 'php' (wikimedia/less.php, like Magento)")
+	flag.StringVar(&opts.LessCompiler, "less-compiler", deploy.LessCompilerAuto, "LESS compiler: 'auto' (php when installed, otherwise go), 'php' (wikimedia/less.php, like Magento) or 'go' (built-in less.go, experimental)")
 	flag.BoolVar(&lumaDispatch, "luma-dispatch", false, "Dispatch non-Hyvä themes to bin/magento setup:static-content:deploy")
 	flag.BoolVar(&showVersion, "version", false, "Show the version")
 	flag.Usage = func() {
@@ -80,8 +80,10 @@ func run() int {
 		fmt.Fprintf(os.Stderr, "Error: --symlink must be 'file', 'locale' or 'locale-contained', got '%s'\n", symlinkMode)
 		return 1
 	}
-	if opts.LessCompiler != deploy.LessCompilerGo && opts.LessCompiler != deploy.LessCompilerPHP {
-		fmt.Fprintf(os.Stderr, "Error: --less-compiler must be 'go' or 'php', got '%s'\n", opts.LessCompiler)
+	switch opts.LessCompiler {
+	case deploy.LessCompilerAuto, deploy.LessCompilerGo, deploy.LessCompilerPHP:
+	default:
+		fmt.Fprintf(os.Stderr, "Error: --less-compiler must be 'auto', 'go' or 'php', got '%s'\n", opts.LessCompiler)
 		return 1
 	}
 	if strategy != "quick" {
@@ -128,7 +130,7 @@ func run() int {
 		fmt.Fprintf(os.Stderr, "Error: deploying static content is applicable only for production mode (current mode: %s). Use -f to force.\n", effectiveMode)
 		return 1
 	}
-	lessCompiler, lessWarning, lessNotice := deploy.ResolveLessCompiler(opts.LessCompiler, effectiveMode, env.HasLessPHP)
+	lessCompiler, lessWarning, lessNotice := deploy.ResolveLessCompiler(opts.LessCompiler, effectiveMode, env.HasLessPHP, env.LessSourceMaps)
 	opts.LessCompiler = lessCompiler
 	if !opts.NoLess && !opts.NoCSS {
 		if lessWarning != "" {

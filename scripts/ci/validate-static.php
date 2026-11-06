@@ -22,7 +22,7 @@ final class StaticValidator
     private string $static;
     private array $errors = [];
     private bool $sri;
-    /** 'area': pub/static/<area>/sri-hashes.json (Magento_Csp with SubresourceIntegrity storage), 'package': per package */
+    /** 'area': pub/static/<area>/sri-hashes.json (Magento 2.4.6 - 2.4.8), 'package': per package */
     private string $sriLayout;
     /** @var array<string, array<string, string>> expected SRI hashes per area */
     private array $sriExpected = [];
@@ -36,7 +36,25 @@ final class StaticValidator
     ) {
         $this->static = $root . '/pub/static';
         $this->sri = !$options['no-sri'] && $this->sriInstalled();
-        $this->sriLayout = glob($root . '/vendor/*/module-csp/Model/SubresourceIntegrity/Storage/File.php') ? 'area' : 'package';
+        $this->sriLayout = $this->detectSriLayout();
+    }
+
+    /**
+     * Magento 2.4.6 - 2.4.8 save the hashes per area (SubresourceIntegrity storage, with the area as context in the
+     * Integrity post processor). Older versions, Magento 2.4.9 and Mage-OS 3 and later write sri-hashes.json in
+     * every package.
+     */
+    private function detectSriLayout(): string
+    {
+        if (!glob($this->root . '/vendor/*/module-csp/Model/SubresourceIntegrity/Storage/File.php')) {
+            return 'package';
+        }
+        foreach (glob($this->root . '/vendor/*/module-csp/Model/Deploy/Package/Processor/PostProcessor/Integrity.php') ?: [] as $file) {
+            if (preg_match('#explode\(\s*\'/\'\s*,\s*\$package->getPath\(\)\s*\)\s*\[\s*0\s*\]#', (string)file_get_contents($file))) {
+                return 'area';
+            }
+        }
+        return 'package';
     }
 
     public function run(): int
@@ -223,12 +241,23 @@ final class StaticValidator
         $styles = $this->static . "/$package/" . $this->generated($area === 'frontend' ? 'css/styles-m.css' : 'css/styles.css');
         if (is_file($styles)) {
             $hasMap = str_contains((string)file_get_contents($styles), 'sourceMappingURL=');
-            if ($this->options['mode'] === 'developer' && !$hasMap) {
+            $wantMap = $this->options['mode'] === 'developer' && $this->lessSourceMaps();
+            if ($wantMap && !$hasMap) {
                 $this->fail("$styles has no source map in developer mode");
-            } elseif ($this->options['mode'] !== 'developer' && $hasMap) {
-                $this->fail("$styles has a source map outside developer mode");
+            } elseif (!$wantMap && $hasMap) {
+                $this->fail("$styles has a source map, but " . ($this->options['mode'] === 'developer'
+                    ? 'this Magento version does not generate source maps' : 'not in developer mode'));
             }
         }
+    }
+
+    /** Whether Magento's LESS processor generates source maps in developer mode (Magento 2.4.8 and later) */
+    private function lessSourceMaps(): bool
+    {
+        foreach (glob($this->root . '/vendor/*/framework/Css/PreProcessor/Adapter/Less/Processor.php') ?: [] as $file) {
+            return (bool)preg_match('/[\'"]sourceMap[\'"]\s*=>/', (string)file_get_contents($file));
+        }
+        return true;
     }
 
     private function readJson(string $file): ?array

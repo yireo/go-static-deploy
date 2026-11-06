@@ -103,21 +103,28 @@ func TestResolveLessCompiler(t *testing.T) {
 	cases := []struct {
 		requested, mode string
 		hasLessPHP      bool
+		sourceMaps      bool
 		want            string
 		warning         bool
 	}{
-		{LessCompilerGo, "production", true, LessCompilerGo, false},
-		{LessCompilerGo, "production", false, LessCompilerGo, false},
-		{LessCompilerPHP, "production", true, LessCompilerPHP, false},
-		{LessCompilerPHP, "production", false, LessCompilerGo, true},
-		{LessCompilerGo, "developer", true, LessCompilerPHP, false},
-		{LessCompilerGo, "developer", false, LessCompilerGo, true},
-		{LessCompilerPHP, "developer", true, LessCompilerPHP, false},
+		{LessCompilerAuto, "production", true, true, LessCompilerPHP, false},
+		{LessCompilerAuto, "production", false, true, LessCompilerGo, true},
+		{LessCompilerAuto, "developer", true, true, LessCompilerPHP, false},
+		{LessCompilerAuto, "developer", false, true, LessCompilerGo, true},
+		{LessCompilerGo, "production", true, true, LessCompilerGo, false},
+		{LessCompilerGo, "production", false, true, LessCompilerGo, false},
+		{LessCompilerPHP, "production", true, true, LessCompilerPHP, false},
+		{LessCompilerPHP, "production", false, true, LessCompilerGo, true},
+		{LessCompilerGo, "developer", true, true, LessCompilerPHP, false},
+		{LessCompilerGo, "developer", false, true, LessCompilerGo, true},
+		{LessCompilerGo, "developer", true, false, LessCompilerGo, false},
+		{LessCompilerGo, "developer", false, false, LessCompilerGo, false},
+		{LessCompilerPHP, "developer", true, true, LessCompilerPHP, false},
 	}
 	for _, c := range cases {
-		got, warning, _ := ResolveLessCompiler(c.requested, c.mode, c.hasLessPHP)
+		got, warning, _ := ResolveLessCompiler(c.requested, c.mode, c.hasLessPHP, c.sourceMaps)
 		if got != c.want || (warning != "") != c.warning {
-			t.Errorf("ResolveLessCompiler(%q, %q, %v) = %q, %q", c.requested, c.mode, c.hasLessPHP, got, warning)
+			t.Errorf("ResolveLessCompiler(%q, %q, %v, %v) = %q, %q", c.requested, c.mode, c.hasLessPHP, c.sourceMaps, got, warning)
 		}
 	}
 }

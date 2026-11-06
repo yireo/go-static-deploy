@@ -21,15 +21,15 @@ Tested on Magento 2.4.9 (Luma, Blank and Backend themes, about 2,000 files per p
 | 3 themes × 2 locales (6 packages)     | 10.4 s        | 3.2 s            |
 | 3 themes × 4 locales (12 packages)    | 15.9 s        | 3.5 s            |
 
-These results were measured with `--less-compiler=php`. Most of the remaining time is spent compiling the largest
-LESS file (`styles-m.less`). Compiled CSS is shared between the locales of a theme when the LESS inputs are
-identical. The default Go LESS compiler is faster, but its output still differs (see
-[LESS compilers](#less-compilers)).
+These results were measured with the default LESS compiler (less.php). Most of the remaining time is spent
+compiling the largest LESS file (`styles-m.less`). Compiled CSS is shared between the locales of a theme when the
+LESS inputs are identical. The experimental Go LESS compiler (`--less-compiler=go`) is faster, but its output still
+differs (see [LESS compilers](#less-compilers)).
 
 The output was compared file by file with the native command using `scripts/compare.sh`, in developer mode,
 production mode, and production mode with minification:
 
-- All copied files, compiled CSS with `--less-compiler=php` (including developer mode source maps), `requirejs-config.js`,
+- All copied files, compiled CSS (with less.php, including developer mode source maps), `requirejs-config.js`,
   `requirejs-min-resolver.js`, `js-translation.json` and `sri-hashes.json` are **byte-identical** or semantically
   identical (JSON).
 - The JavaScript bundles contain the same files. They are not byte-identical because Magento fills them in unsorted
@@ -42,8 +42,8 @@ production mode, and production mode with minification:
 - Go 1.26+ to build
 - PHP CLI that can run the Magento installation (the same PHP you use for `bin/magento`). See
   [Where PHP is still used](#where-php-is-still-used).
-- Optional: `wikimedia/less.php` in the Magento vendor folder (installed with Magento by default). It is only used
-  with `--less-compiler=php` and for source maps in developer mode (see [LESS compilers](#less-compilers)).
+- `wikimedia/less.php` in the Magento vendor folder (installed with Magento by default), to compile LESS like
+  Magento. Without it, the experimental Go LESS compiler is used (see [LESS compilers](#less-compilers)).
 - Optional: the `intl` PHP extension (used for translations that use the ICU message format, like Magento)
 
 ## Installation
@@ -92,7 +92,7 @@ Main options:
 | `-j, --jobs` | Number of packages deployed in parallel and number of PHP workers (default: number of CPUs) |
 | `-f, --force` | Required when Magento is not in production mode, like `bin/magento` |
 | `--mode` | Override `MAGE_MODE` from `app/etc/env.php` |
-| `--less-compiler` | `go` (default, built-in [less.go](https://github.com/toakleaf/less.go)) or `php` (`wikimedia/less.php`, like Magento). See [LESS compilers](#less-compilers) |
+| `--less-compiler` | `auto` (default: `php` when less.php is installed, otherwise `go`), `php` (`wikimedia/less.php`, like Magento) or `go` (experimental, built-in [less.go](https://github.com/toakleaf/less.go)). See [LESS compilers](#less-compilers) |
 | `--content-version`, `--refresh-content-version-only` | Same as `bin/magento` |
 | `--no-javascript`, `--no-css`, `--no-less`, `--no-js-bundle` | Skip parts of the deployment |
 | `--no-translations`, `--no-sri` | Skip `js-translation.json` or `sri-hashes.json` |
@@ -141,7 +141,7 @@ Your web server must follow symlinks in `pub/static` (Nginx does by default; Apa
      keep them as they are. The PHP helper detects this in the installed framework.
    - The result is written to `var/view_preprocessed/pub/static/<package>/`, the same place Magento uses, so source
      maps in developer mode are identical too.
-   - The materialized root files are compiled with less.go (default) or less.php (`--less-compiler=php`). See
+   - The materialized root files are compiled with less.php (default) or less.go (`--less-compiler=go`). See
      [LESS compilers](#less-compilers).
    - **CSS URL handling** mirrors Magento's `CssResolver` with the `{{base_url_path}}` and `Module::path` notations,
      for compiled LESS and for plain CSS files that contain `{{` or `::`.
@@ -154,12 +154,13 @@ Your web server must follow symlinks in `pub/static` (Nginx does by default; Apa
    `Magento\Framework\View\Asset\Minification::getExcludes()` in global `etc/di.xml` files (like the
    `/pay.google.com/` exclude of PayPal_BraintreeCore) are included as well: they also end up in
    `requirejs-min-resolver.js`.
-8. **SRI**: when the installed Magento_Csp module creates `sri-hashes.json`, the same file is written. Recent
-   Magento and Mage-OS versions store the hashes per area in `pub/static/<area>/sri-hashes.json`: the files of all
-   areas are removed when the deployment starts, and every package adds the sha256 hashes of its JavaScript files
-   (source files under their name without `.min`, generated files and bundles as deployed, except
-   `requirejs-min-resolver.js`). Older versions write a `sri-hashes.json` in every package with the hashes of all
-   deployed JavaScript files.
+8. **SRI**: when the installed Magento_Csp module creates `sri-hashes.json`, the same file is written. Magento
+   2.4.6 - 2.4.8 store the hashes per area in `pub/static/<area>/sri-hashes.json`: the files of all areas are removed when
+   the deployment starts, and every package adds the sha256 hashes of its JavaScript files (source files under their
+   name without `.min`, generated files and bundles as deployed, except `requirejs-min-resolver.js`). Magento 2.4.9
+   and Mage-OS 3 and later write a `sri-hashes.json` in every package with the hashes of the deployed JavaScript
+   files (under their deployed name, except `requirejs-min-resolver.js`). Older versions write a `sri-hashes.json`
+   in every package with the hashes of all deployed JavaScript files.
 9. `pub/static/deployed_version.txt` is written like Magento does.
 
 ### PHP (`internal/phpbridge/bootstrap.php`)
@@ -173,13 +174,13 @@ Magento application.
 ### Where PHP is still used
 
 Everything not listed here is done in Go: file collection and fallback, LESS preprocessing (`@magento_import`,
-imports, comment removal), LESS compilation (by default), CSS URL handling, `requirejs-config.js`,
+imports, comment removal), LESS compilation (with `--less-compiler=go`), CSS URL handling, `requirejs-config.js`,
 `requirejs-min-resolver.js`, minification, `sri-hashes.json` and `deployed_version.txt`.
 
 | PHP command | When it is called | What PHP does | Skipped with |
 |-------------|-------------------|---------------|--------------|
-| `config` | Once at startup, as a separate process (`internal/magento/env.go`) | Reads component registration (`registration.php` files), `app/etc/config.php`/`env.php` and the PHP version. Calls the minification exclude plugins of enabled modules (only plugins without constructor dependencies, called with an empty list) and checks whether the framework trims asset contents. With `--with-db`, also reads `core_config_data` (`dev/%`, default scope). | Always called |
-| `less` | Only with `--less-compiler=php`, or in developer mode when less.php is installed: once per LESS root file of a package (`compileLess` in `internal/deploy/deployer.go`). Outside developer mode, the result is shared between the locales of a theme when the inputs are identical. | Compiles the materialized LESS file with `Less_Parser`, with the same options as Magento (compressed outside developer mode, inline source maps in developer mode). | `--no-less`, `--no-css`, the default `--less-compiler=go` outside developer mode |
+| `config` | Once at startup, as a separate process (`internal/magento/env.go`) | Reads component registration (`registration.php` files), `app/etc/config.php`/`env.php` and the PHP version. Calls the minification exclude plugins of enabled modules (only plugins without constructor dependencies, called with an empty list) and checks whether the framework trims asset contents and whether its LESS processor generates source maps. With `--with-db`, also reads `core_config_data` (`dev/%`, default scope). | Always called |
+| `less` | Once per LESS root file of a package (`compileLess` in `internal/deploy/deployer.go`), when less.php is installed. Outside developer mode, the result is shared between the locales of a theme when the inputs are identical. | Compiles the materialized LESS file with `Less_Parser`, with the same options as Magento (compressed outside developer mode, inline source maps in developer mode on Magento 2.4.8 and later). | `--no-less`, `--no-css`, `--less-compiler=go` (except for developer mode source maps) |
 | `i18n` | Once per package (`jsTranslation` in `internal/deploy/i18n.go`). With `--symlink locale` or `locale-contained`, also used to check whether a locale can be a symlink to the first locale. | Builds `js-translation.json` from module, language pack (with `language.xml` inheritance), theme and optionally database translations (`translation` table, with `--with-db`), using Magento's PCRE phrase patterns from the `di.xml` files. It uses PHP's `fgetcsv`, array and `json_encode` semantics and the `intl` MessageFormatter, like Magento does. | `--no-translations`, `--no-javascript` |
 | `view-config` | Once per theme, cached (`viewConfig` in `internal/deploy/bundle.go`) | Merges the JS bundling settings of the `etc/view.xml` files with Magento's own `View` config reader | `--no-js-bundle`, `--no-javascript` |
 | `bundle` | Once per package (`bundle` in `internal/deploy/bundle.go`) | Writes `js/bundle/bundle*.js` like `Magento\Deploy\Service\Bundle` | `--no-js-bundle`, `--no-javascript` |
@@ -198,17 +199,20 @@ To keep PHP usage to a minimum (for example for Hyvä themes), use `--no-js-bund
 `--less-compiler` selects how the materialized LESS files are compiled. The LESS preprocessing (`@magento_import`,
 imports) and the CSS URL handling are the same for both.
 
-- `go` (default): [less.go](https://github.com/toakleaf/less.go), a Go port of less.js 4, built into the binary. It
-  is compiled with the same options as Magento: math is always evaluated (also divisions outside parentheses, like
-  less.php), URLs are not rewritten, and the output is compressed outside developer mode. LESS files are compiled in
-  parallel without PHP. In one test, a Luma package deployed in 10 s instead of 36 s with less.php (with
-  `styles-l.less` failing, see below).
-- `php`: `wikimedia/less.php` through the PHP helper, the same library and options as Magento. Use it when you
-  need CSS that is identical to `bin/magento`.
+- `auto` (default): `php` when less.php is installed, otherwise `go` (with a warning).
+- `php`: `wikimedia/less.php` through the PHP helper, the same library and options as Magento, so the CSS is
+  identical to `bin/magento`. Like Magento 2.4.8 and later, inline source maps are generated in developer mode;
+  older Magento versions do not generate them, and neither does this tool for those versions.
+- `go` (experimental): [less.go](https://github.com/toakleaf/less.go), a Go port of less.js 4, built into the
+  binary. It is compiled with the same options as Magento: math is always evaluated (also divisions outside
+  parentheses, like less.php), URLs are not rewritten, and the output is compressed outside developer mode. LESS
+  files are compiled in parallel without PHP. In one test, a Luma package deployed in 10 s instead of 36 s with
+  less.php (with `styles-l.less` failing, see below).
 
-When `php` is selected but less.php is not installed, `go` is used with a warning. In developer mode, less.php is
-used when it is installed, because less.go cannot create source maps in combination with Magento's math setting.
-Without less.php, developer mode CSS is compiled with less.go, without source maps.
+When `php` is selected but less.php is not installed, `go` is used with a warning. When `go` is selected in
+developer mode and Magento generates source maps, less.php is still used when it is installed, because less.go
+cannot create source maps in combination with Magento's math setting. Without less.php, developer mode CSS is
+compiled with less.go, without source maps.
 
 **less.go is young, and its output differs from less.php.** Tested with Magento 2.4 Luma and Blank:
 
@@ -220,7 +224,7 @@ Without less.php, developer mode CSS is compiled with less.go, without source ma
   floating point noise) and in some rules.
 - The backend theme compiles without errors.
 
-Use `--less-compiler=php` for Luma based themes until these issues are fixed in less.go.
+Don't use `--less-compiler=go` for Luma based themes until these issues are fixed in less.go.
 
 ## Differences with `bin/magento`
 
@@ -232,8 +236,8 @@ Use `--less-compiler=php` for Luma based themes until these issues are fixed in 
   filesystem order, and its cache is shared between packages. Because of this, the first deployed package of an
   area can contain a few extra non-minified files. Here the rule is applied deterministically. The result matches
   the native output of all packages except that first one.
-- **Compiled LESS** is created with less.go by default, so it differs from the output of `bin/magento`. See
-  [LESS compilers](#less-compilers). With `--less-compiler=php`, it is identical.
+- **Compiled LESS** is identical to the output of `bin/magento` with less.php (the default). With
+  `--less-compiler=go`, or when less.php is not installed, it differs. See [LESS compilers](#less-compilers).
 - **Minified JS and CSS** (`dev/js/minify_files`, `dev/css/minify_files`) are created with tdewolff/minify instead of
   JShrink/CSSmin. Compiled LESS output is already compressed by the LESS compiler in production mode.
 - Configuration comes from `etc/config.xml` defaults and `app/etc/config.php`/`env.php`. Database values are only
@@ -292,7 +296,7 @@ also validated on its own by `scripts/ci/validate-static.php`:
   when `file.min.js` exists, the RequireJS bundle configuration in the last bundle only
 - CSS: no unresolved `@magento_import`, `Module::` URLs or `.less` imports; every relative `url()` of the compiled
   `css/*.css` files exists (problems that also exist in the `bin/magento` output are ignored)
-- source maps in developer mode only; `.min.js`/`.min.css` names with minification
+- source maps in developer mode only (and only on Magento versions that generate them); `.min.js`/`.min.css` names with minification
 - symlink modes: symlinked files resolve, generated files are real files, locale directory symlinks point to a
   deployed sibling locale
 - the fixture theme: compiled LESS, `Module::` URL resolution, template override, RequireJS config, translations from

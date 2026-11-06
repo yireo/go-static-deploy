@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"unicode/utf8"
@@ -26,11 +27,42 @@ func (d *Deployer) sriEnabled() bool {
 	return fileExists(filepath.Join(d.env.ModulePaths["Magento_Csp"], "Model", "Deploy", "Package", "Processor", "PostProcessor", "Integrity.php"))
 }
 
-// sriPerArea tells whether Magento_Csp stores the hashes per area in pub/static/<area>/sri-hashes.json
-// (Magento\Csp\Model\SubresourceIntegrity\Storage\File, in recent Magento and Mage-OS versions).
-// Older versions write sri-hashes.json in every package.
+// SRI layouts of the installed Magento_Csp module
+const (
+	// sriLayoutPackage: sri-hashes.json in every package, with the hashes of all deployed JavaScript files
+	// (older Magento versions, without the SubresourceIntegrity storage)
+	sriLayoutPackage = "package"
+	// sriLayoutArea: pub/static/<area>/sri-hashes.json, with the hashes of the source files (Magento 2.4.6 - 2.4.8)
+	sriLayoutArea = "area"
+	// sriLayoutPackageDeployed: sri-hashes.json in every package, written by the SubresourceIntegrity storage,
+	// with the hashes of the deployed JavaScript files of the package (Magento 2.4.9 and Mage-OS 3 and later)
+	sriLayoutPackageDeployed = "package-deployed"
+)
+
+// sriLayout detects where and how Magento_Csp stores the hashes during deployment.
+func (d *Deployer) sriLayout() string {
+	d.sriLayoutOnce.Do(func() {
+		csp := d.env.ModulePaths["Magento_Csp"]
+		d.sriLayoutValue = sriLayoutPackage
+		if !fileExists(filepath.Join(csp, "Model", "SubresourceIntegrity", "Storage", "File.php")) {
+			return
+		}
+		d.sriLayoutValue = sriLayoutPackageDeployed
+		integrity, err := os.ReadFile(filepath.Join(csp, "Model", "Deploy", "Package", "Processor", "PostProcessor", "Integrity.php"))
+		if err == nil && sriAreaContext.Match(integrity) {
+			d.sriLayoutValue = sriLayoutArea
+		}
+	})
+	return d.sriLayoutValue
+}
+
+// sriAreaContext matches the Integrity post processor of Magento 2.4.6 - 2.4.8, which saves the hashes with the area
+// as context: $area = explode('/', $package->getPath())[0];
+var sriAreaContext = regexp.MustCompile(`explode\(\s*'/'\s*,\s*\$package->getPath\(\)\s*\)\s*\[\s*0\s*\]`)
+
+// sriPerArea tells whether Magento_Csp stores the hashes per area in pub/static/<area>/sri-hashes.json.
 func (d *Deployer) sriPerArea() bool {
-	return fileExists(filepath.Join(d.env.ModulePaths["Magento_Csp"], "Model", "SubresourceIntegrity", "Storage", "File.php"))
+	return d.sriLayout() == sriLayoutArea
 }
 
 // removeSRIHashes mirrors the Magento_Csp RemoveAllAssetIntegrityHashes plugin: the hashes of all areas are
@@ -68,8 +100,15 @@ func (p *Package) writeSRIHashes(outDir string, entries []entry) error {
 	if err != nil {
 		return err
 	}
-	if !p.d.sriPerArea() {
+	switch p.d.sriLayout() {
+	case sriLayoutPackage:
 		// Older Magento_Csp versions: a sha256 hash of every deployed JavaScript file of the package
+		return os.WriteFile(filepath.Join(outDir, sriFile), phpJSONObject(hashes), 0o644)
+	case sriLayoutPackageDeployed:
+		// The Integrity post processor hashes the deployed (minified) file of every JavaScript file of the
+		// package. requirejs-min-resolver.js is created after the post processors.
+		delete(hashes, p.Path()+"/"+requireJsMinResolver)
+		delete(hashes, p.Path()+"/"+p.d.minifiedName(p.Path(), requireJsMinResolver))
 		return os.WriteFile(filepath.Join(outDir, sriFile), phpJSONObject(hashes), 0o644)
 	}
 

@@ -201,6 +201,7 @@ function gsd_config(string $root, bool $withDb): array
         'has_intl' => class_exists('MessageFormatter'),
         'minify_exclude_plugins' => gsd_minify_exclude_plugins($root, $config, $components['module']),
         'asset_content_trimmed' => gsd_asset_content_trimmed(),
+        'less_source_maps' => gsd_less_source_maps(),
     ];
 
     if ($withDb) {
@@ -222,6 +223,22 @@ function gsd_asset_content_trimmed(): bool
         $lines = file((string)$method->getFileName()) ?: [];
         $body = implode('', array_slice($lines, $method->getStartLine() - 1, $method->getEndLine() - $method->getStartLine() + 1));
         return (bool)preg_match('/trim\(\s*\$this->source->getContent\(/', $body);
+    } catch (\Throwable $e) {
+        return true;
+    }
+}
+
+/**
+ * Whether Magento\Framework\Css\PreProcessor\Adapter\Less\Processor::processContent() generates source maps in
+ * developer mode (Magento 2.4.8 and later).
+ */
+function gsd_less_source_maps(): bool
+{
+    try {
+        $method = new ReflectionMethod('Magento\Framework\Css\PreProcessor\Adapter\Less\Processor', 'processContent');
+        $lines = file((string)$method->getFileName()) ?: [];
+        $body = implode('', array_slice($lines, $method->getStartLine() - 1, $method->getEndLine() - $method->getStartLine() + 1));
+        return (bool)preg_match('/[\'"]sourceMap[\'"]\s*=>/', $body);
     } catch (\Throwable $e) {
         return true;
     }
@@ -403,13 +420,18 @@ final class GsdWorker
     {
         $mode = (string)($request['mode'] ?? 'production');
         $developer = $mode === 'developer';
-        $parser = new \Less_Parser([
+        $options = [
             'relativeUrls' => false,
             'compress' => !$developer,
-            'sourceMap' => $developer,
-            'sourceMapRootpath' => '/',
-            'sourceMapBasepath' => $this->root . '/var/view_preprocessed/pub/',
-        ]);
+        ];
+        if (!empty($request['source_maps'])) {
+            $options += [
+                'sourceMap' => $developer,
+                'sourceMapRootpath' => '/',
+                'sourceMapBasepath' => $this->root . '/var/view_preprocessed/pub/',
+            ];
+        }
+        $parser = new \Less_Parser($options);
         $file = (string)$request['file'];
         if (trim((string)file_get_contents($file)) === '') {
             throw new RuntimeException('Compilation from source: LESS file is empty: ' . $request['asset_path']);

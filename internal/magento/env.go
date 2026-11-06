@@ -35,6 +35,7 @@ type rawConfig struct {
 	HasLessPHP                      bool                   `json:"has_less_php"`
 	HasIntl                         bool                   `json:"has_intl"`
 	AssetContentTrimmed             bool                   `json:"asset_content_trimmed"`
+	LessSourceMaps                  bool                   `json:"less_source_maps"`
 	MinifyExcludePlugins            struct {
 		JS       []string `json:"js"`
 		CSS      []string `json:"css"`
@@ -104,6 +105,9 @@ type Env struct {
 	// AssetContentTrimmed tells whether Magento trims the content of imported LESS files
 	// (Magento\Framework\View\Asset\File::getContent() in Magento 2.4.9 and later).
 	AssetContentTrimmed bool
+	// LessSourceMaps tells whether Magento's LESS processor generates source maps in developer mode
+	// (Magento\Framework\Css\PreProcessor\Adapter\Less\Processor in Magento 2.4.8 and later).
+	LessSourceMaps bool
 	// Warnings are problems found while reading the installation details.
 	Warnings []string
 }
@@ -134,6 +138,7 @@ func Load(bridge *phpbridge.Bridge) (*Env, error) {
 		},
 		Warnings:            raw.MinifyExcludePlugins.Warnings,
 		AssetContentTrimmed: raw.AssetContentTrimmed,
+		LessSourceMaps:      raw.LessSourceMaps,
 	}
 	if env.DefaultStoreID == 0 {
 		env.DefaultStoreID = 1
@@ -192,6 +197,7 @@ func NewEnv(root, mode string, modules []Component, enabledModules []string, the
 		DefaultStoreID:      1,
 		HasLessPHP:          true,
 		AssetContentTrimmed: true,
+		LessSourceMaps:      true,
 	}
 	if env.Config == nil {
 		env.Config = NewConfig()
