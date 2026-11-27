@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+- `pub/static/deployed_version.txt` is now written atomically and only after a successful deploy, so a failed
+  deploy no longer publishes a new content version pointing at incomplete assets.
+
 ## [0.1.0] - 2026-11-27
 
 First release: a fast replacement for `bin/magento setup:static-content:deploy` for Hyvä and Luma themes.

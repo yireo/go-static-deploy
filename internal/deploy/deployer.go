@@ -153,17 +153,30 @@ func (d *Deployer) Packages() ([][]*Package, error) {
 	return groups, nil
 }
 
-// WriteVersion writes pub/static/deployed_version.txt.
-func (d *Deployer) WriteVersion() (string, error) {
-	version := d.opts.ContentVersion
-	if version == "" {
-		version = strconv.FormatInt(time.Now().Unix(), 10)
+// ResolveVersion returns the custom content version, or the current Unix timestamp.
+func (d *Deployer) ResolveVersion() string {
+	if d.opts.ContentVersion != "" {
+		return d.opts.ContentVersion
 	}
+	return strconv.FormatInt(time.Now().Unix(), 10)
+}
+
+// WriteVersion atomically writes pub/static/deployed_version.txt.
+func (d *Deployer) WriteVersion(version string) error {
 	dir := filepath.Join(d.env.Root, "pub", "static")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return "", err
+		return err
 	}
-	return version, os.WriteFile(filepath.Join(dir, "deployed_version.txt"), []byte(version), 0o644)
+	file := filepath.Join(dir, "deployed_version.txt")
+	tmp := file + ".tmp"
+	if err := os.WriteFile(tmp, []byte(version), 0o644); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, file); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	return nil
 }
 
 // Run deploys all packages.

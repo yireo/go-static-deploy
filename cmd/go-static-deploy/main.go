@@ -173,12 +173,12 @@ func run() int {
 		fmt.Fprintln(out)
 	}
 
-	contentVersion, err := d.WriteVersion()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error writing deployed_version.txt: %v\n", err)
-		return 1
-	}
+	contentVersion := d.ResolveVersion()
 	if opts.RefreshVersion {
+		if err := d.WriteVersion(contentVersion); err != nil {
+			fmt.Fprintf(os.Stderr, "Error writing deployed_version.txt: %v\n", err)
+			return 1
+		}
 		fmt.Fprintf(out, "New content version: %s\n", contentVersion)
 		return 0
 	}
@@ -242,6 +242,14 @@ func run() int {
 	if err := d.WriteSRIHashes(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error writing sri-hashes.json: %v\n", err)
 		exitCode = 1
+	}
+
+	// Only publish the new version once all assets are in place
+	if exitCode == 0 {
+		if err := d.WriteVersion(contentVersion); err != nil {
+			fmt.Fprintf(os.Stderr, "Error writing deployed_version.txt: %v\n", err)
+			exitCode = 1
+		}
 	}
 
 	return exitCode
