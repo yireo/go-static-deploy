@@ -8,7 +8,6 @@ import (
 
 	"github.com/tdewolff/minify/v2"
 	"github.com/tdewolff/minify/v2/css"
-	"github.com/tdewolff/minify/v2/js"
 )
 
 // minification mirrors Magento\Framework\View\Asset\Minification.
@@ -40,8 +39,6 @@ func newMinification(enabledJS, enabledCSS bool, excludeJS, excludeCSS []string)
 		}
 	}
 	mf.m.AddFunc("text/css", css.Minify)
-	// Renaming variables breaks RequireJS's CommonJS dependency scan of `function (require) { require('x') }`.
-	mf.m.Add("application/javascript", &js.Minifier{KeepVarNames: true})
 	return mf
 }
 
@@ -82,15 +79,13 @@ func (mf *minification) excludesFor(ext string) []string {
 }
 
 func (mf *minification) minifyJS(content []byte) []byte {
-	// The minifier is not eval-aware and drops parameters that only eval'd code uses (mage/utils/template).
-	if bytes.Contains(content, []byte("eval(")) {
+	// JShrink (like Magento) instead of a renaming minifier: RequireJS scans `function (require) {...}` for
+	// require('x') calls and mage/utils/template eval()s code that uses the otherwise unused `$` argument.
+	out, err := jshrinkMinify(string(content))
+	if err != nil {
 		return content
 	}
-	var buf bytes.Buffer
-	if err := mf.m.Minify("application/javascript", &buf, bytes.NewReader(content)); err != nil {
-		return content
-	}
-	return buf.Bytes()
+	return []byte(out)
 }
 
 func (mf *minification) minifyCSS(content []byte) []byte {

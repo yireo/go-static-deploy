@@ -34,7 +34,8 @@ production mode, and production mode with minification:
   identical (JSON).
 - The JavaScript bundles contain the same files. They are not byte-identical because Magento fills them in unsorted
   filesystem order (see [Differences](#differences-with-binmagento)).
-- When JS/CSS minification is enabled, the minified file contents differ, because a different minifier is used.
+- When JS minification is enabled, minified JavaScript is byte-identical: a Go port of JShrink (Magento's minifier) is
+  used. Minified CSS differs, because a different minifier is used.
 - Minified PHTML templates (`var/view_preprocessed/pub/static`) are byte-identical, with both the PHP minifier and
   the built-in Go port (checked with all 2155 templates of a Magento 2.4 installation).
 
@@ -66,6 +67,12 @@ in `var/view_preprocessed`. It only runs when `GSD_TEST_MAGENTO_ROOT` points to 
 
 ```bash
 GSD_TEST_MAGENTO_ROOT=/var/www/magento go test ./internal/deploy -run TestCompileLessGoMatchesLessPHP -v
+```
+
+`TestJShrinkMatchesPHP` compares the JShrink port with `vendor/tedivm/jshrink` for all JavaScript files of that root:
+
+```bash
+GSD_TEST_MAGENTO_ROOT=/var/www/magento go test ./internal/deploy -run TestJShrinkMatchesPHP -v
 ```
 
 The binaries are built with `CGO_ENABLED=0`, so they are statically linked and also run on musl-based systems like Alpine.
@@ -155,8 +162,10 @@ Your web server must follow symlinks in `pub/static` (Nginx does by default; Apa
    sequence, then per theme: module overrides and the theme file). `requirejs-min-resolver.js` uses the
    `dev/js/minify_exclude` configuration.
 7. **Minification** (production and default mode, when `dev/js/minify_files` or `dev/css/minify_files` is enabled) follows
-   Magento's naming rules (`.min.js`, `.min.css`, exclude lists, pre-minified sources) and uses
-   [tdewolff/minify](https://github.com/tdewolff/minify). Excludes added by plugins on
+   Magento's naming rules (`.min.js`, `.min.css`, exclude lists, pre-minified sources). JavaScript is minified with
+   a Go port of [JShrink](https://github.com/tedivm/JShrink) v1.8.1, like Magento: it only strips whitespace and
+   comments, so names and unused arguments stay (RequireJS `require` scanning and `mage/utils/template`'s `eval`
+   depend on that). CSS is minified with [tdewolff/minify](https://github.com/tdewolff/minify). Excludes added by plugins on
    `Magento\Framework\View\Asset\Minification::getExcludes()` in global `etc/di.xml` files (like the
    `/pay.google.com/` exclude of PayPal_BraintreeCore) are included as well: they also end up in
    `requirejs-min-resolver.js`.
