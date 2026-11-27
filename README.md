@@ -49,6 +49,9 @@ production mode, and production mode with minification:
 
 ## Installation
 
+Prebuilt binaries (linux/amd64, linux/arm64, darwin/arm64) are attached to every
+[GitHub release](https://github.com/yireo/go-static-deploy/releases). To build from source:
+
 ```bash
 make build            # creates bin/go-static-deploy
 make dist             # cross-compiles linux/amd64, linux/arm64 and darwin/arm64 binaries into dist/
@@ -342,3 +345,11 @@ scripts/compare.sh          compare two pub/static trees
 scripts/ci/                 integration tests: install Magento, test a mode, validate the output, fixture theme
 .github/                    integration test workflow and matrix
 ```
+
+## Releasing
+
+1. Move the `[Unreleased]` entries in `CHANGELOG.md` to a new `## [x.y.z] - YYYY-MM-DD` section and commit.
+2. Tag and push: `git tag vx.y.z && git push origin vx.y.z`.
+
+The `Release` workflow (`.github/workflows/release.yml`) runs the tests, builds the binaries with `make dist`, and
+publishes a GitHub release with the binaries, `checksums.txt` and the matching `CHANGELOG.md` section as notes.
