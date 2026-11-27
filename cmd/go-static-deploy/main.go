@@ -49,6 +49,7 @@ func run() int {
 	flag.BoolVar(&opts.NoJavascript, "no-javascript", false, "Do not deploy JavaScript files (also skips requirejs-config.js and js-translation.json)")
 	flag.BoolVar(&opts.NoCSS, "no-css", false, "Do not deploy CSS files")
 	flag.BoolVar(&opts.NoLess, "no-less", false, "Do not compile LESS files")
+	flag.BoolVar(&opts.StrictLess, "strict-less", false, "Fail the deployment when a LESS file cannot be compiled (bin/magento only logs these errors)")
 	flag.BoolVar(&opts.NoJsBundle, "no-js-bundle", false, "Do not create JavaScript bundles")
 	flag.StringVar(&htmlMinify, "html-minify", deploy.HTMLMinifyAuto, "Minify PHTML templates into var/view_preprocessed: 'auto' (production mode with dev/template/minify_html enabled, or not known without --with-db), 'on' or 'off'")
 	flag.StringVar(&opts.HTMLMinifier, "html-minifier", deploy.HTMLMinifierPHP, "PHTML template minifier: 'php' (Magento's own minifier) or 'go' (built-in port, experimental)")
@@ -265,6 +266,11 @@ func printSummary(out *os.File, results []deploy.Result, total time.Duration, ve
 			hasErrors = true
 			fmt.Fprintf(out, "✗ %s\n", r.Package)
 			for _, e := range r.Errors {
+				fmt.Fprintf(out, "    %s\n", e)
+			}
+		} else if len(r.LessErrors) > 0 {
+			fmt.Fprintf(out, "⚠ %s\n", r.Package)
+			for _, e := range r.LessErrors {
 				fmt.Fprintf(out, "    %s\n", e)
 			}
 		}

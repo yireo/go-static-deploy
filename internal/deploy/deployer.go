@@ -61,6 +61,9 @@ type Result struct {
 	Symlinked string
 	Warnings  []string
 	Errors    []string
+	// LessErrors are LESS compilation failures. Like bin/magento, they do not fail the
+	// deployment unless Options.StrictLess is set (then they are also in Errors).
+	LessErrors []string
 }
 
 // New creates a deployer.
@@ -350,18 +353,25 @@ func (d *Deployer) packageDirs(p *Package) (string, string) {
 }
 
 type packageRun struct {
-	p        *Package
-	outDir   string
-	symlink  bool
-	files    atomic.Int64
-	mu       sync.Mutex
-	errors   []string
-	warnings []string
+	p          *Package
+	outDir     string
+	symlink    bool
+	files      atomic.Int64
+	mu         sync.Mutex
+	errors     []string
+	lessErrors []string
+	warnings   []string
 }
 
 func (r *packageRun) errorf(format string, args ...any) {
 	r.mu.Lock()
 	r.errors = append(r.errors, fmt.Sprintf(format, args...))
+	r.mu.Unlock()
+}
+
+func (r *packageRun) lessErrorf(format string, args ...any) {
+	r.mu.Lock()
+	r.lessErrors = append(r.lessErrors, fmt.Sprintf(format, args...))
 	r.mu.Unlock()
 }
 
@@ -432,7 +442,7 @@ func (d *Deployer) deployPackage(p *Package, base *Package, baseResult *Result) 
 			go func(e entry, file, hash string) {
 				defer wg.Done()
 				if err := d.compileLess(run, e, file, hash); err != nil {
-					run.errorf("Compilation from source %s: %v", e.source, err)
+					run.lessErrorf("Compilation from source %s: %v", e.source, err)
 				}
 			}(e, file, hash)
 		}
@@ -468,6 +478,10 @@ func (d *Deployer) deployPackage(p *Package, base *Package, baseResult *Result) 
 
 	result.Files = run.files.Load()
 	result.Errors = run.errors
+	result.LessErrors = run.lessErrors
+	if d.opts.StrictLess {
+		result.Errors = append(result.Errors, run.lessErrors...)
+	}
 	result.Warnings = append(result.Warnings, run.warnings...)
 	result.Duration = time.Since(start)
 	return result

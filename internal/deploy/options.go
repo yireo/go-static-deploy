@@ -22,6 +22,8 @@ type Options struct {
 	NoJavascript   bool
 	NoCSS          bool
 	NoLess         bool
+	// StrictLess makes LESS compilation failures fail the deployment (bin/magento only logs them).
+	StrictLess     bool
 	NoJsBundle     bool
 	NoTranslations bool
 	NoSRI          bool

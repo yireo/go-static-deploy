@@ -108,6 +108,7 @@ Main options:
 | `--html-minifier` | `php` (default: Magento's own `Html\Minifier`) or `go` (built-in port, experimental) |
 | `--content-version`, `--refresh-content-version-only` | Same as `bin/magento` |
 | `--no-javascript`, `--no-css`, `--no-less`, `--no-js-bundle` | Skip parts of the deployment |
+| `--strict-less` | Fail the deployment when a LESS file cannot be compiled. By default, like `bin/magento`, these errors are reported (`⚠`) without changing the exit code |
 | `--no-translations`, `--no-sri` | Skip `js-translation.json` or `sri-hashes.json` |
 | `--with-db` | Also read `dev/*` configuration and the `translation` table from the database (PDO, no Magento bootstrap) |
 | `--symlink` | `file`, `locale` or `locale-contained` (see below) |
