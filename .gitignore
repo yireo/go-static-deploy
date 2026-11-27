@@ -2,3 +2,4 @@
 /dist/
 .opencode/opencode-loop/
 deploy.sh
+.playwright-mcp/
