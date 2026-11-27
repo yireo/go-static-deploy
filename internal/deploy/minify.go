@@ -82,6 +82,10 @@ func (mf *minification) excludesFor(ext string) []string {
 }
 
 func (mf *minification) minifyJS(content []byte) []byte {
+	// The minifier is not eval-aware and drops parameters that only eval'd code uses (mage/utils/template).
+	if bytes.Contains(content, []byte("eval(")) {
+		return content
+	}
 	var buf bytes.Buffer
 	if err := mf.m.Minify("application/javascript", &buf, bytes.NewReader(content)); err != nil {
 		return content

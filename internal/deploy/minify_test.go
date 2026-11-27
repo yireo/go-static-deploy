@@ -18,3 +18,11 @@ func TestMinifyJSKeepsRequireName(t *testing.T) {
 		}
 	}
 }
+
+func TestMinifyJSKeepsEvalScopeParams(t *testing.T) {
+	mf := newMinification(true, false, nil, nil)
+	src := "define([], function () { function template(tmpl, $) { return eval('`' + tmpl + '`'); } return template; });"
+	if out := string(mf.minifyJS([]byte(src))); !strings.Contains(out, "tmpl, $") {
+		t.Errorf("eval scope parameter dropped: %s", out)
+	}
+}
