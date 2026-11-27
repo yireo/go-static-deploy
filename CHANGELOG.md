@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-11-27
+
+First release: a fast replacement for `bin/magento setup:static-content:deploy` for Hyvä and Luma themes.
+
 ### Added
 - PHTML template minification into `var/view_preprocessed/pub/static`, like `bin/magento setup:static-content:deploy`.
   Without it, Magento fails in production mode with `dev/template/minify_html` enabled (missing `root.phtml`).
@@ -19,4 +23,5 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Fixed
 - `requirejs-min-resolver.js` is included in the SRI hashes for Magento 2.4.9 and Mage-OS 3+.
 
-[Unreleased]: https://github.com/yireo/go-static-deploy/commits/main
+[Unreleased]: https://github.com/yireo/go-static-deploy/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/yireo/go-static-deploy/releases/tag/v0.1.0
