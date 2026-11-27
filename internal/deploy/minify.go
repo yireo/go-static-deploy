@@ -40,7 +40,8 @@ func newMinification(enabledJS, enabledCSS bool, excludeJS, excludeCSS []string)
 		}
 	}
 	mf.m.AddFunc("text/css", css.Minify)
-	mf.m.AddFunc("application/javascript", js.Minify)
+	// Renaming variables breaks RequireJS's CommonJS dependency scan of `function (require) { require('x') }`.
+	mf.m.Add("application/javascript", &js.Minifier{KeepVarNames: true})
 	return mf
 }
 
