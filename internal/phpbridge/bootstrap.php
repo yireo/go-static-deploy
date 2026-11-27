@@ -408,9 +408,36 @@ final class GsdWorker
                 return ['count' => $this->bundle($request)];
             case 'view-config':
                 return ['content' => json_encode($this->viewConfig($request))];
+            case 'minify-html':
+                return ['count' => $this->minifyHtml($request)];
             default:
                 throw new InvalidArgumentException('Unknown command: ' . ($request['cmd'] ?? ''));
         }
+    }
+
+    private $htmlMinifier;
+
+    /**
+     * Same as \Magento\Deploy\Service\MinifyTemplates::minifyTemplates(), for the given templates
+     */
+    private function minifyHtml(array $request): int
+    {
+        if ($this->htmlMinifier === null) {
+            $driverPool = new \Magento\Framework\Filesystem\DriverPool();
+            $readFactory = new \Magento\Framework\Filesystem\Directory\ReadFactory($driverPool);
+            $filesystem = new \Magento\Framework\Filesystem(
+                new \Magento\Framework\App\Filesystem\DirectoryList($this->root),
+                $readFactory,
+                new \Magento\Framework\Filesystem\Directory\WriteFactory($driverPool)
+            );
+            $this->htmlMinifier = new \Magento\Framework\View\Template\Html\Minifier($filesystem, $readFactory);
+        }
+        $count = 0;
+        foreach ((array)$request['files'] as $file) {
+            $this->htmlMinifier->minify((string)$file);
+            $count++;
+        }
+        return $count;
     }
 
     /**

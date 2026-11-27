@@ -32,4 +32,6 @@ type Options struct {
 	Mode string
 	// LessCompiler selects the LESS compiler: LessCompilerPHP or LessCompilerGo (see ResolveLessCompiler).
 	LessCompiler string
+	// HTMLMinifier selects the PHTML template minifier: HTMLMinifierPHP or HTMLMinifierGo.
+	HTMLMinifier string
 }

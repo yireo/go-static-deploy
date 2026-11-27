@@ -28,8 +28,9 @@ func main() {
 func run() int {
 	var (
 		root, strategy, phpBinary, symlinkMode, mode string
+		htmlMinify                                   string
 		opts                                         deploy.Options
-		force, withDB, lumaDispatch                  bool
+		force, withDB, lumaDispatch, noHTMLMinify    bool
 		showVersion                                  bool
 	)
 
@@ -49,9 +50,9 @@ func run() int {
 	flag.BoolVar(&opts.NoCSS, "no-css", false, "Do not deploy CSS files")
 	flag.BoolVar(&opts.NoLess, "no-less", false, "Do not compile LESS files")
 	flag.BoolVar(&opts.NoJsBundle, "no-js-bundle", false, "Do not create JavaScript bundles")
-	// Accepted for compatibility with bin/magento only: PHTML templates are never minified.
-	flag.Bool("no-html-minify", true, "Ignored: PHTML templates are never minified")
-	_ = flag.CommandLine.MarkHidden("no-html-minify")
+	flag.StringVar(&htmlMinify, "html-minify", deploy.HTMLMinifyAuto, "Minify PHTML templates into var/view_preprocessed: 'auto' (production mode with dev/template/minify_html enabled, or not known without --with-db), 'on' or 'off'")
+	flag.StringVar(&opts.HTMLMinifier, "html-minifier", deploy.HTMLMinifierPHP, "PHTML template minifier: 'php' (Magento's own minifier) or 'go' (built-in port, experimental)")
+	flag.BoolVar(&noHTMLMinify, "no-html-minify", false, "Do not minify PHTML templates (same as --html-minify=off)")
 	flag.BoolVar(&opts.NoTranslations, "no-translations", false, "Do not generate js-translation.json")
 	flag.BoolVar(&opts.NoSRI, "no-sri", false, "Do not generate sri-hashes.json")
 	flag.BoolVarP(&opts.Verbose, "verbose", "v", false, "Verbose output")
@@ -84,6 +85,21 @@ func run() int {
 	case deploy.LessCompilerAuto, deploy.LessCompilerGo, deploy.LessCompilerPHP:
 	default:
 		fmt.Fprintf(os.Stderr, "Error: --less-compiler must be 'auto', 'go' or 'php', got '%s'\n", opts.LessCompiler)
+		return 1
+	}
+	if noHTMLMinify {
+		htmlMinify = deploy.HTMLMinifyOff
+	}
+	switch htmlMinify {
+	case deploy.HTMLMinifyAuto, deploy.HTMLMinifyOn, deploy.HTMLMinifyOff:
+	default:
+		fmt.Fprintf(os.Stderr, "Error: --html-minify must be 'auto', 'on' or 'off', got '%s'\n", htmlMinify)
+		return 1
+	}
+	switch opts.HTMLMinifier {
+	case deploy.HTMLMinifierPHP, deploy.HTMLMinifierGo:
+	default:
+		fmt.Fprintf(os.Stderr, "Error: --html-minifier must be 'php' or 'go', got '%s'\n", opts.HTMLMinifier)
 		return 1
 	}
 	if strategy != "quick" {
@@ -203,6 +219,16 @@ func run() int {
 		if printSummary(out, results, time.Since(start), opts.Verbose) {
 			exitCode = 1
 		}
+	}
+
+	if deploy.ShouldMinifyHTML(htmlMinify, effectiveMode, env.Config, withDB) {
+		minifyStart := time.Now()
+		count, err := d.MinifyTemplates()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error minifying PHTML templates: %v\n", err)
+			exitCode = 1
+		}
+		fmt.Fprintf(out, "Minified %d PHTML templates (%s minifier) in %.2fs\n", count, opts.HTMLMinifier, time.Since(minifyStart).Seconds())
 	}
 
 	if len(dispatch) > 0 {

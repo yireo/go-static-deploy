@@ -8,4 +8,7 @@ require (
 	github.com/toakleaf/less.go v0.4.2
 )
 
-require github.com/tdewolff/parse/v2 v2.8.20 // indirect
+require (
+	github.com/dlclark/regexp2 v1.12.0 // indirect
+	github.com/tdewolff/parse/v2 v2.8.20 // indirect
+)
